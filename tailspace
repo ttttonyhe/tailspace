@@ -1090,6 +1090,31 @@ hooked_files() {
 
 cron_present() { crontab -l 2>/dev/null | grep -qF "$CRON_MARK"; }
 
+# Stacked mounts on / list the visible one last.
+root_mount() {
+  local id point last=""
+
+  while read -r id _ _ _ point _; do
+    if [ "$point" = / ]; then last=$id; fi
+  done 2>/dev/null <"/proc/$1/mountinfo"
+  echo "$last"
+}
+
+# A cron daemon reads our crontab only if it sees our filesystem. A container that shares the host's
+# PID namespace sees the host's crond, which reads the host's crontabs, so root mounts must match.
+# Where other users' processes are hidden, as with hidepid, assume cron works.
+cron_runs() {
+  local dir comm self
+
+  [ -r /proc/1/comm ] || return 0
+  self=$(root_mount self)
+  for dir in /proc/[0-9]*; do
+    { read -r comm <"$dir/comm"; } 2>/dev/null || continue
+    if { [ "$comm" = cron ] || [ "$comm" = crond ]; } && [ "$(root_mount "${dir#/proc/}")" = "$self" ]; then return 0; fi
+  done
+  return 1
+}
+
 # Where a cron daemon runs, these bring the node back after a reboot even if nobody logs in.
 # A crontab that can't be read is never rewritten, or the user's own lines would be lost.
 cron_set() {
@@ -1115,7 +1140,7 @@ install_hooks() {
   while IFS= read -r rc; do
     rewrite_hook "$rc" add || warn "Could not update $rc"
   done < <(hook_targets)
-  if [ "$AUTOSTART" = 1 ]; then
+  if [ "$AUTOSTART" = 1 ] && cron_runs; then
     cron_set add || true
   elif cron_present; then
     cron_set remove || true

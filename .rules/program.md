@@ -24,6 +24,7 @@ paths:
 - Inside `$(...)`, `$BASHPID` is the subshell's PID. Background loops copy it first: `local self="$BASHPID"` in `watch_daemon` and `update_loop`.
 - Read `status --json` with `json_string`, `json_bool` and `node_ip`, which match with `[[ =~ ]]`. The first match is the right one, because ipnstate.Status orders Version and BackendState before Self, and Self before ExitNodeStatus and Peer.
 - `load_settings` reads `config` with a `read` loop and no forks, because the shell hook calls it at every login.
+- `install_hooks` adds the cron job only when `cron_runs` finds a `cron` or `crond` process with the same root mount ID as ours, and removes it otherwise. With `hostPID`, a pod sees the host's crond, which reads the host's crontabs; with `hidepid`, no daemon is visible, so `cron_runs` assumes one. Keep this scan out of the shell hook, because it reads every process's `comm`.
 
 ## Process identity
 
