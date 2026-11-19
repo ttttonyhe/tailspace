@@ -1,0 +1,30 @@
+name: shellcheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      # Pinned so CI and local runs report the same findings.
+      - name: Install ShellCheck 0.11.0
+        run: |
+          curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz | tar -xJ
+          sudo install shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+
+      - run: bash -n tailspace
+      - run: shellcheck -s bash tailspace
+      - run: ./tailspace help
+
+      # CentOS 7 ships bash 4.2, the oldest bash Tailspace supports.
+      - name: bash 4.2
+        run: docker run --rm -v "$PWD:/w" -w /w bash:4.2 sh -c 'bash -n tailspace && bash tailspace help >/dev/null'

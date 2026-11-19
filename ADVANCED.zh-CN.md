@@ -1,0 +1,213 @@
+# Tailspace 详解
+
+[README](README.zh-CN.md) 介绍了常规安装。本文介绍其余的一切：auth key、SSH、Tailspace 如何让服务器保持在线、命令与设置、代理，以及参考信息。
+
+[English](ADVANCED.md) · 简体中文
+
+## 用 auth key 安装
+
+如果你用脚本部署服务器，或者只是不想打开浏览器，可以用 auth key 安装。如果 key 带有标签，服务器的密钥也不会过期，因为 Tailscale 默认为带标签的设备关闭密钥过期。
+
+1. 在你的[访问控制策略](https://login.tailscale.com/admin/acls/file)里定义这个标签。最简单的做法是用 [`examples/policy.hujson`](examples/policy.hujson) 替换现有策略。它定义了 `tag:server`，允许 tailnet 里的所有人 SSH 到带标签的服务器，并禁止带标签的服务器连接你的其他设备。如果你改过自己的策略，只复制需要的部分即可。
+2. [生成一个 auth key](https://login.tailscale.com/admin/settings/keys)，标签选 `tag:server`。如果要在多台服务器上使用，记得勾选 Reusable。请妥善保管它，任何拿到它的人都能往你的 tailnet 里添加设备。
+3. 用这个 key 安装，并给服务器起个名字：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | TS_AUTHKEY=tskey-auth-... bash -s -- install --hostname lab-07
+```
+
+用 `TS_AUTHKEY` 传入 key，它就不会出现在进程列表里，服务器上的其他用户也就看不到。如果还不想让它留在 shell 历史里，就把它存进一个只有你能读的文件，然后传 `TS_AUTHKEY=file:/path/to/key`。
+
+## SSH
+
+Tailspace 会开启 Tailscale SSH，你用 Tailscale 身份登录，不需要 SSH 密钥。Tailscale SSH 占用 22 端口。如果服务器上还运行着 OpenSSH，Tailspace 会让它在 2222 端口上可用，所以 `ssh -p 2222 you@lab-07` 依然可以用你平时的密钥和配置。
+
+Tailscale 的默认策略让 Tailscale SSH 以 check 模式运行，每 12 小时要你在浏览器里确认一次。不想这样，就把策略 `ssh` 规则里的 `"check"` 改成 `"accept"`。
+
+其他端口都直通服务器。比如服务器上监听 8888 端口的 Jupyter Notebook，访问 `lab-07:8888` 就能打开。
+
+## Tailspace 如何让服务器保持在线
+
+常规安装的 Tailscale 作为系统服务运行，由操作系统在开机时启动，崩溃后重新启动。没有 root，这件事就由 Tailspace 来做：它在 Tailscale 旁边运行一个小小的监管进程。在进程列表里，Tailscale 是 `tailscaled`，监管进程是 `tailspace`。
+
+### 崩溃与服务器重启
+
+Tailscale 崩溃后，监管进程会在 5 秒后重新启动它。
+
+服务器重启时，监管进程也会随之结束，而没有 root，Tailspace 无法注册开机启动的服务。所以它改用两种普通账号就能设置的方式，把监管进程带回来。如果服务器运行 cron，一个 cron 任务会在开机时启动监管进程，之后每 5 分钟检查一次。此外，你的 shell 启动文件里，比如 `~/.bashrc`，会有一段简短的检查，每当你在服务器上打开 shell 时启动它。这段检查在后台运行，每个新 shell 只多花不到 1 毫秒。
+
+所以在没有 cron 的服务器上，Tailspace 会在服务器重启后你第一次登录时恢复运行。用你在安装 Tailspace 之前的方式登录即可，比如集群自己的 SSH 或 `kubectl exec`。
+
+### 网络故障与代理
+
+只要能连上协调服务器，也就是管理你 tailnet 的那个服务，Tailscale 就是在线的。大多数服务器可以直接连上它。另一些服务器直连某些网站很慢或被屏蔽，但另有一个 HTTP 代理，在中国大陆，这类代理常常跑在一条时不时会断的 VPN 上。Tailspace 把这两种出路分别叫作直连路径和代理路径。
+
+Tailscale 只在启动时读取代理设置，所以没法自己切换路径。当正在使用的路径不通、而另一条通时，监管进程会在另一条路径上重启 Tailscale。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/paths-dark.svg">
+  <img src="assets/paths-light.svg" alt="两条泳道的时间线，分别是直连路径和代理路径。服务器起初走直连路径。直连路径不通后，监管进程等待约 4 分钟让 Tailscale 自行恢复，然后切换到代理路径。后来代理路径也不通了，此时直连路径已经恢复，于是等待约 1 分钟后，监管进程切回直连路径。">
+</picture>
+
+切换之前，监管进程会先给 Tailscale 留出自行恢复的时间，直连路径 4 分钟，代理路径 1 分钟。如果两条路径都不通，它每分钟检查一次，哪条先恢复就用哪条。它优先使用直连路径，因为走代理路径时，服务器只和代理一样可靠。切到代理路径后，等直连路径重新稳定下来，它就会切回去，最早在 20 分钟后。
+
+<details>
+<summary>精确规则</summary>
+
+- 监管进程每 20 秒向 Tailscale 询问一次状态。如果 Tailscale 连续三次没有回应，监管进程就重启 Tailscale。
+- Tailscale 离线后，监管进程在直连路径上等 4 分钟，留给 Tailscale 自己重连；在代理路径上等 1 分钟。
+- 然后，它用 `tailscale debug ts2021` 经正在使用的路径向协调服务器新建一条连接，以此测试这条路径。如果不通，就测试另一条，另一条通就切换过去。如果正在使用的路径连续两次测试都通，Tailscale 却仍然离线，说明 Tailscale 卡住了，监管进程会在同一条路径上重启它。如果两条都不通，就每分钟再测一次。
+- 因其他原因重启 Tailscale 之后，包括重启 Tailspace 本身之后，只要原来的路径还通，监管进程就继续用它。
+- 切到代理路径后，监管进程先等 15 分钟，再每 5 分钟测试一次直连路径，连续两次成功就切回去。如果切回后 30 分钟内直连路径又不通了，这 15 分钟的等待时间就加倍，最长 4 小时。
+
+</details>
+
+### 更新
+
+监管进程每天检查一次 Tailscale 有没有新版本。如果有，它会安装新版本、重启 Tailscale，并等待 Tailscale 在 2 分钟内重新上线、再稳定运行 30 秒。如果没有做到，Tailspace 会回滚到上一个版本，以后也不再自动安装这个版本。如果监管进程无法判断，比如网络断了或者你停止了 Tailspace，它同样会回滚，并在一天后再试一次新版本。
+
+### Tailspace 何时会放弃
+
+有些问题需要人来处理，一直重试只会浪费资源。当服务器需要重新登录、加入 tailnet 失败，或者 Tailscale 连续失败 5 次时，Tailspace 会停止 Tailscale 和监管进程。之后它会一直保持停止，服务器重启也不例外，直到你重新启动它。`tailspace status` 会告诉你原因：
+
+| status 显示 | 发生了什么 | 怎么办 |
+| --- | --- | --- |
+| stopped with `tailspace stop` | 你停止了 Tailspace | 运行 `tailspace start` |
+| this server must log in again | 它的密钥过期了，或者有人把它从你的 tailnet 里删除了 | 再运行一次 `tailspace install` |
+| adding this server to your tailnet failed | auth key 已过期或已用完，或者策略里没有定义它的标签 | 用有效的 auth key 运行 `tailspace install` |
+| Tailscale failed 5 times in a row | Tailscale 连续 5 次崩溃、没有回应，或在网络正常时一直离线 | 先看 `tailspace logs`，再运行 `tailspace start` |
+
+## 命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `tailspace status` | 显示 Tailspace 是否在运行、走的是哪条路径，以及最近做了什么 |
+| `tailspace stop` | 停止 Tailscale 和监管进程，服务器重启后也保持停止 |
+| `tailspace start` | 重新启动它们 |
+| `tailspace restart` | 重启它们。即使你是通过 Tailscale SSH 运行的，连接会在重启时断开，重启也照样会完成 |
+| `tailspace set --no-ssh` | 修改一项设置，这里是关闭 Tailscale SSH。见[设置](#设置) |
+| `tailspace update` | 立即更新 Tailscale |
+| `tailspace update 1.104.6` | 安装指定版本的 Tailscale，并关闭每日更新 |
+| `tailspace logs -f` | 持续显示日志，类似 `tail -f` |
+| `tailspace self-update` | 更新 Tailspace 自身 |
+| `tailspace uninstall` | 让服务器从你的 tailnet 登出，并移除 Tailspace |
+
+Tailspace 还会安装 `tailscale` 命令，也就是标准的 Tailscale 命令行工具，它已经配置好，控制的正是 Tailspace 运行的那个 Tailscale。比如 `tailscale status` 会列出你 tailnet 里的设备。
+
+## 设置
+
+`tailspace install` 和 `tailspace set` 都接受下面这些选项。`set` 不用重装就能修改设置，而再次运行安装时，会沿用你之前的选择。
+
+| 选项 | 默认值 | 含义 |
+| --- | --- | --- |
+| `--authkey KEY` | | auth key，或者用 `file:PATH` 从文件读取。仅限安装。`TS_AUTHKEY` 更安全，因为服务器上的其他用户能看到你运行的命令 |
+| `--tags TAGS` | | 服务器的标签，例如 `tag:server`。仅限安装。使用 OAuth client secret 时必填，它可以代替 auth key 使用 |
+| `--version VERSION` | 最新版 | 安装这个版本的 Tailscale，并关闭每日更新。仅限安装 |
+| `--hostname NAME` | 服务器的主机名 | 服务器在你 tailnet 里的名字 |
+| `--proxy URL` | 第一次安装时的 `https_proxy` | 代理路径使用的 HTTP 代理，`none` 表示不用 |
+| `--udp-port PORT` | 0，任意空闲端口 | 与其他设备直接连接时使用的 UDP 端口，范围 1024 到 65535。需要在防火墙上放行时，指定一个 |
+| `--[no-]autostart` | 开 | 服务器重启后让 Tailspace 恢复运行的 shell 检查和 cron 任务 |
+| `--[no-]auto-update` | 开 | 每天更新 Tailscale，方式见[更新](#更新) |
+| `--[no-]ssh` | 开 | 22 端口上的 Tailscale SSH，以及 2222 端口上的 OpenSSH。关闭后，22 端口通往 OpenSSH |
+| `--[no-]log-upload` | 开 | 把 Tailscale 的诊断日志发送给 Tailscale |
+
+如果想装在 `~/.tailspace` 以外的地方，比如你的家目录不允许运行程序，安装时设置 `TAILSPACE_PREFIX` 即可。之后的命令会自己找到新位置。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | TAILSPACE_PREFIX=/scratch/$USER/tailspace bash
+```
+
+## 有代理的服务器
+
+如果服务器要通过 HTTP 代理才能上网，安装前请确认已经设置了 `https_proxy`，这样安装程序才能下载 Tailspace 和 Tailscale：
+
+```bash
+export https_proxy=http://127.0.0.1:7890
+curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash
+```
+
+第一次安装会把这个代理保存下来，供代理路径使用。只要直连路径通，Tailscale 依然会走直连路径启动，原因见[网络故障与代理](#网络故障与代理)。以后要更换或去掉代理，运行 `tailspace set --proxy http://HOST:PORT` 或 `tailspace set --proxy none`。
+
+只支持 `http://` 代理。Tailscale 会把所有代理都当作 HTTP 代理，即使写成 `socks5://` 也一样，而且它会忽略 `ALL_PROXY`。
+
+两台设备无法直接连接时，流量会经过 DERP 中继，而中继可能离得很远。有代理的服务器常常就是这种情况。有两个 Tailscale 功能可以把中继拉近：
+
+- 在服务器附近运行[你自己的 DERP 服务器](https://tailscale.com/kb/1118/custom-derp-servers)，对两条路径都有帮助。它不需要域名，因为 `derper --certmode manual --hostname IP` 会自己生成证书，并打印出要加进策略的配置。启动时加上 `--verify-clients`，只让你的 tailnet 使用它，这要求同一台机器上也运行着 Tailscale。
+- [Peer relays](https://tailscale.com/docs/features/peer-relay) 需要 Tailscale 1.86 或更新版本，能让你自己的某台设备为其他设备做中继。它使用 UDP，而代理不转发 UDP，所以只在直连路径上有用。
+
+## 从服务器连接其他设备
+
+常规安装的 Tailscale 会添加一块虚拟网卡，任何程序都能通过它访问你的其他设备。没有 root 就没有这块网卡，所以服务器上的程序要通过 `tailscale nc` 来连接：
+
+```bash
+ssh -p 2222 -o ProxyCommand='tailscale nc %h %p' you@lab-01
+```
+
+如果服务器带有标签，示例策略会拦下这类连接，因为它禁止带标签的服务器连接你的其他设备。要让服务器之间互相访问，取消策略里允许 `tag:server` 访问 `tag:server` 那一行的注释。
+
+## 参考
+
+### 文件
+
+```text
+~/.tailspace/
+  tailspace           Tailspace 本身，shell 检查和 cron 任务运行的都是这一份
+  bin/                tailscale 和 tailscaled 程序
+  bin.prev/           上一个版本的 Tailscale，用于回滚
+  config              你的设置
+  bad-version         更新后运行失败的版本
+  state/HOSTNAME/     属于某一台服务器的全部内容
+    tailscaled.state  服务器在你 tailnet 里的身份
+    tailscaled.log    日志，超过 10 MB 后重新开始
+~/.local/bin/         tailspace 和 tailscale 命令
+```
+
+shell 检查位于你 shell 启动文件里的两行标记注释之间，同样这几行还把 `~/.local/bin` 加进 `PATH`，新 shell 才能找到 `tailspace` 命令。在有 cron 的服务器上，你的 crontab 里还会多出 cron 任务的两行。
+
+每台服务器把状态放在 `state/` 下以自己主机名命名的目录里。所以共用家目录的服务器，比如同一集群里的节点，可以共用一个 `~/.tailspace`。在每台服务器上各运行一次 `tailspace install`，每台都会作为独立的设备加入你的 tailnet，同时共用程序、设置和 shell 检查。主机名会变的服务器，比如以新名字重建的 Kubernetes Pod，会被当作新服务器，需要重新运行 `tailspace install`，所以这类服务器请使用可重复使用的 auth key。
+
+### 卸载
+
+`tailspace uninstall` 会让服务器从你的 tailnet 登出，停止 Tailspace，并删除它的文件、命令、shell 检查和 cron 任务。服务器仍会留在管理后台的 Machines 页面上，直到你在那里删除它。如果 Tailspace 没在运行，卸载无法让服务器登出，并会提示你。如果还有其他服务器在用同一个 `~/.tailspace`，卸载会保留它们需要的部分。
+
+### 故障排查
+
+先运行 `tailspace status`，详细信息看 `tailspace logs`。
+
+- **安装时连不上 controlplane.tailscale.com。** 服务器需要代理，见[有代理的服务器](#有代理的服务器)。
+- **Tailscale SSH 拒绝连接。** 确认你的策略里有允许你的 `ssh` 规则，比如示例策略里那条，并用安装 Tailspace 的那个账号连接。
+- **服务器重启后什么都没在运行。** 这台服务器没有 cron，重启后也还没有人登录过。用安装 Tailspace 之前的方式登录一次即可。
+- **安装提示下载的 tailscaled 无法运行。** 你的家目录不允许运行程序。用 `TAILSPACE_PREFIX` 装到别处。
+- **安装提示文件锁不可用，或者路径太长。** 用 `TAILSPACE_PREFIX` 装到本地磁盘上一个较短的路径。
+
+### 系统要求
+
+- Linux 3.2 或更新版本，包括 CentOS 7，架构为 x86_64、arm64、32 位 ARM、386 或 riscv64
+- bash 4.2 或更新版本，以及 curl 或 wget
+- `flock`、`setsid` 和 `timeout`，几乎所有发行版都自带
+- 服务器上的一个普通账号
+
+### 安全
+
+- Tailscale 以你的身份运行，你的账号能做什么，它就只能做什么。只有你能读取 `~/.tailspace`。
+- 到达服务器 tailnet IP 的每条连接，Tailscale 都会转发到服务器上的同一端口。所以服务器上监听的任何程序，无论是你的还是其他用户的，都能被你的策略所允许的设备访问。要加以限制，就在策略里只放行需要的端口，比如 `tcp:22` 和 `tcp:2222`。
+- Tailscale SSH 只会让人以你的账号登录，谁能连接由你的策略决定。示例策略允许 tailnet 里的所有人连接，所以如果你和别人共用 tailnet，请把它 `ssh` 规则里的 `autogroup:member` 换成你自己的登录名。
+- Tailscale 的新版本通过 HTTPS 从 `pkgs.tailscale.com` 下载，HTTPS 是验证来源的唯一手段。新版本只有在能运行并重新上线后才会保留，见[更新](#更新)。Tailspace 从不自动更新自己，`tailspace self-update` 会从本仓库的 `main` 分支下载最新的 Tailspace 并运行。
+
+### 示例策略
+
+除了 `tag:server` 和 SSH 规则，[`examples/policy.hujson`](examples/policy.hujson) 还为带标签的服务器开启了 `cache-network-maps`。这样每台服务器都会保存一份它所知道的其他设备的信息，Tailscale 重启后，不等协调服务器回应就能连上它们。这需要 Tailscale 1.104 或更新版本，没开启时 `tailspace status` 会提醒你。详见 [client-side netmap caching](https://tailscale.com/docs/reference/client-side-netmap-caching)。
+
+### Tailspace 对 Tailscale 做的调整
+
+Tailspace 启动 Tailscale 时做了几项调整，更适合没有 root 的服务器：
+
+| 调整 | 原因 |
+| --- | --- |
+| 可用核心超过 8 个时设 `GOMAXPROCS=8` | Tailscale 用 Go 编写，Go 默认为每个核心运行一个线程。在一个 124 核的 Pod 上，这让 Tailscale 从 57 个线程降到 14 个，每次状态检查的 CPU 时间也从 57 毫秒降到 15 毫秒 |
+| `TS_PORTLIST=false` | 不再每秒扫描服务器上开放的端口，这份列表只在管理后台显示 |
+| TCP keepalive 在空闲 60 秒后开始，之后每 15 秒一次 | 连向已消失设备的连接会在几分钟内关闭，而不是两小时 |
+| 容器内关闭 UDP GSO | GSO 会把 UDP 数据包成批发送，在某些容器网络上会让吞吐量大幅下降，见 [#20858](https://github.com/tailscale/tailscale/issues/20858) |
+| `GODEBUG=tlsmlkem=0` | 有些网络会丢弃使用 ML-KEM 这种新型密钥交换的 TLS 握手，见 [#20777](https://github.com/tailscale/tailscale/issues/20777)。所有流量仍受 Tailscale 自身的加密保护 |
+
+有两项设置保持 Tailscale 的默认值。Tailspace 不开启 RACK 这一丢包恢复机制，因为它曾导致连接卡住，Tailscale 1.104.5 已将其关闭，见 [#21946](https://github.com/tailscale/tailscale/issues/21946)。Tailspace 也保持日志上传开启，因为开启了网络流日志的 tailnet 会让不上传日志的设备离线。

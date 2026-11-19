@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
+  <style>
+    .tilde { stroke: #ededed; }
+    .cursor { fill: #4c78f5; }
+  </style>
+  <path class="tilde" d="M13 35C15.5 29.5 20 27.5 26.5 32S37.5 34.5 40 29" stroke-width="5" stroke-linecap="round"/>
+  <rect class="cursor" x="46" y="18" width="8" height="28" rx="1.5"/>
+</svg>

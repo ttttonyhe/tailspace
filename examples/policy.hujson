@@ -1,0 +1,60 @@
+// A tailnet policy for servers added with Tailspace.
+// Paste it at https://login.tailscale.com/admin/acls/file, or merge in the parts you need.
+{
+	// Only admins can tag devices as servers.
+	"tagOwners": {
+		"tag:server": ["autogroup:admin"],
+	},
+
+	"grants": [
+		// Every member's devices can reach every device on every port. Tagged servers aren't
+		// members, so they can't open connections to anything, including each other.
+		// Grants only add access. To open nothing but SSH on servers, narrow "dst" here, for example
+		// to ["autogroup:self"], and add a grant for "tag:server" with "ip": ["tcp:22", "tcp:2222"].
+		{
+			"src": ["autogroup:member"],
+			"dst": ["*"],
+			"ip":  ["*"],
+		},
+
+		// Uncomment to let servers reach each other, for example with `tailscale nc`.
+		// {"src": ["tag:server"], "dst": ["tag:server"], "ip": ["*"]},
+	],
+
+	"ssh": [
+		// Tailscale's default rule: Tailscale SSH into your own, untagged devices.
+		{
+			"src":    ["autogroup:member"],
+			"dst":    ["autogroup:self"],
+			"users":  ["autogroup:nonroot", "root"],
+			"action": "check",
+		},
+		// Tailscale SSH into servers. Tailspace runs tailscaled as a regular user, so you can only
+		// log in as that user. On a tailnet you share, replace autogroup:member with your own
+		// login name, because everyone it names can open a shell as you.
+		{
+			"src":    ["autogroup:member"],
+			"dst":    ["tag:server"],
+			"users":  ["autogroup:nonroot"],
+			"action": "accept",
+		},
+	],
+
+	"nodeAttrs": [
+		// Servers keep a cached network map, so after a restart they can reach the peers they
+		// already knew without waiting for the coordination server. Needs Tailscale 1.104 or newer.
+		{
+			"target": ["tag:server"],
+			"attr":   ["cache-network-maps"],
+		},
+	],
+
+	// The policy only saves when these pass. Replace you@example.com with your login name and
+	// alice with the account that runs Tailspace.
+	// "tests": [
+	// 	{"src": "you@example.com", "accept": ["tag:server:22", "tag:server:2222"]},
+	// ],
+	// "sshTests": [
+	// 	{"src": "you@example.com", "dst": ["tag:server"], "accept": ["alice"], "deny": ["root"]},
+	// ],
+}

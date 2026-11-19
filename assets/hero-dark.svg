@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 316" width="880" height="316" fill="none">
+  <style>
+    .ink { stroke: #a1a1aa; }
+    .rule { stroke: #27272a; }
+    .bay { fill: #3f3f46; stroke: #52525b; }
+    .mine { fill: #4c78f5; stroke: #6b8ff7; }
+    .link { stroke: #4c78f5; }
+    .dot { fill: #4c78f5; }
+    .mark { fill: #6b8ff7; }
+    .label { fill: #8b8b94; }
+    .type { fill: #d4d4d8; }
+    text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; letter-spacing: .02em; }
+  </style>
+
+  <defs>
+    <!-- One rack unit: chassis, vents drawn as a dashed 14px stroke, and two mounting ears. -->
+    <g id="unit" class="ink" stroke-width=".75">
+      <rect x=".5" y=".5" width="300" height="22" rx="2.5"/>
+      <path class="rule" d="M8 11.5H293" stroke-width="14" stroke-dasharray=".5 4.5"/>
+      <rect x="-8.5" y="3.5" width="8" height="16" rx="1.5"/>
+      <rect x="301.5" y="3.5" width="8" height="16" rx="1.5"/>
+      <circle cx="-4.5" cy="11.5" r="1.25"/>
+      <circle cx="305.5" cy="11.5" r="1.25"/>
+    </g>
+    <g id="bays" stroke-width=".5">
+      <rect x="16.5" y="8" width="16" height="7" rx="1.5"/>
+      <rect x="36.5" y="8" width="16" height="7" rx="1.5"/>
+      <rect x="56.5" y="8" width="16" height="7" rx="1.5"/>
+      <rect x="228.5" y="8" width="16" height="7" rx="1.5"/>
+      <rect x="248.5" y="8" width="16" height="7" rx="1.5"/>
+      <rect x="268.5" y="8" width="16" height="7" rx="1.5"/>
+    </g>
+    <g id="drives" stroke-width=".5">
+      <rect x="16.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="32.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="48.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="64.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="80.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="96.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="262.5" y="10" width="6" height="3" rx="1"/>
+      <rect x="276.5" y="10" width="6" height="3" rx="1"/>
+    </g>
+  </defs>
+
+  <text class="label" x="0" y="32">shared cluster, no root</text>
+
+  <g transform="translate(32 47)">
+    <use href="#unit"/><use href="#bays" class="bay"/>
+    <use href="#unit" y="28"/><use href="#bays" class="bay" y="28"/>
+    <use href="#unit" y="56"/><use href="#drives" class="bay" y="56"/>
+    <use href="#unit" y="84"/><use href="#bays" class="bay" y="84"/>
+    <use href="#unit" y="112"/><use href="#bays" class="mine" y="112"/>
+    <use href="#unit" y="140"/><use href="#drives" class="bay" y="140"/>
+    <use href="#unit" y="168"/><use href="#bays" class="bay" y="168"/>
+    <use href="#unit" y="196"/><use href="#drives" class="bay" y="196"/>
+    <use href="#unit" y="224"/><use href="#bays" class="bay" y="224"/>
+  </g>
+
+  <g class="label" text-anchor="end">
+    <text x="14" y="62">01</text>
+    <text x="14" y="90">02</text>
+    <text x="14" y="118">03</text>
+    <text x="14" y="146">04</text>
+    <text x="14" y="174" class="mark">05</text>
+    <text x="14" y="202">06</text>
+    <text x="14" y="230">07</text>
+    <text x="14" y="258">08</text>
+    <text x="14" y="286">09</text>
+  </g>
+
+  <path class="link" d="M346 170.5H666" stroke-width="1.25"/>
+  <circle class="dot" cx="346" cy="170.5" r="2.5"/>
+  <text class="label" x="506" y="162" text-anchor="middle">tailnet</text>
+  <text class="label" x="356" y="188">~/.tailspace</text>
+
+  <text class="label" x="666" y="96">your laptop</text>
+  <g class="ink" stroke-width=".75" stroke-linejoin="round">
+    <rect x="666.5" y="110.5" width="200" height="120" rx="6"/>
+    <rect class="rule" x="673.5" y="117.5" width="186" height="106" rx="2"/>
+    <path d="M653.5 230.5h226l-10 11h-206z"/>
+  </g>
+  <text class="label" x="686" y="146">$ ssh you@lab-07</text>
+  <text class="type" x="686" y="166">~</text>
+  <rect class="dot" x="696" y="156.5" width="6" height="12" rx=".5"/>
+</svg>

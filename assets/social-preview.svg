@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" fill="none">
+  <style>
+    .ink { stroke: #2c2b31; }
+    .rule { stroke: #e4e4e7; }
+    .bay { fill: #d4d4d8; stroke: #a1a1aa; }
+    .mine { fill: #4c78f5; stroke: #3d64d8; }
+    .link { stroke: #4c78f5; }
+    .dot { fill: #4c78f5; }
+  </style>
+
+  <defs>
+    <g id="unit" class="ink" stroke-width="1.1">
+      <rect x=".5" y=".5" width="300" height="22" rx="2.5"/>
+      <path class="rule" d="M8 11.5H293" stroke-width="14" stroke-dasharray=".6 4.4"/>
+      <rect x="-8.5" y="3.5" width="8" height="16" rx="1.5"/>
+      <rect x="301.5" y="3.5" width="8" height="16" rx="1.5"/>
+      <circle cx="-4.5" cy="11.5" r="1.25"/>
+      <circle cx="305.5" cy="11.5" r="1.25"/>
+    </g>
+    <g id="bays" stroke-width=".7">
+      <rect x="16.5" y="8" width="16" height="7" rx="1.5"/>
+      <rect x="36.5" y="8" width="16" height="7" rx="1.5"/>
+      <rect x="56.5" y="8" width="16" height="7" rx="1.5"/>
+      <rect x="228.5" y="8" width="16" height="7" rx="1.5"/>
+      <rect x="248.5" y="8" width="16" height="7" rx="1.5"/>
+      <rect x="268.5" y="8" width="16" height="7" rx="1.5"/>
+    </g>
+    <g id="drives" stroke-width=".7">
+      <rect x="16.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="32.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="48.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="64.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="80.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="96.5" y="8" width="12" height="7" rx="1.5"/>
+      <rect x="262.5" y="10" width="6" height="3" rx="1"/>
+      <rect x="276.5" y="10" width="6" height="3" rx="1"/>
+    </g>
+  </defs>
+
+  <rect width="1280" height="640" fill="#ffffff"/>
+
+  <text x="94" y="322" font-family="Geist, 'Helvetica Neue', Arial, sans-serif" font-size="96" letter-spacing="-3.2" fill="#18181b">Tailspace</text>
+  <text x="99" y="382" font-family="Geist, 'Helvetica Neue', Arial, sans-serif" font-size="36" letter-spacing="-.4" fill="#71717a">Run Tailscale in Rootless Mode</text>
+
+  <!-- Unit 05 sits on the wordmark's baseline; its link runs out of the frame. -->
+  <g transform="translate(724 168.6) scale(1.24)">
+    <use href="#unit"/><use href="#bays" class="bay"/>
+    <use href="#unit" y="28"/><use href="#bays" class="bay" y="28"/>
+    <use href="#unit" y="56"/><use href="#drives" class="bay" y="56"/>
+    <use href="#unit" y="84"/><use href="#bays" class="bay" y="84"/>
+    <use href="#unit" y="112"/><use href="#bays" class="mine" y="112"/>
+    <use href="#unit" y="140"/><use href="#drives" class="bay" y="140"/>
+    <use href="#unit" y="168"/><use href="#bays" class="bay" y="168"/>
+    <use href="#unit" y="196"/><use href="#drives" class="bay" y="196"/>
+    <use href="#unit" y="224"/><use href="#bays" class="bay" y="224"/>
+    <path class="link" d="M314 123.5H460" stroke-width="2.2"/>
+    <circle class="dot" cx="314" cy="123.5" r="3.2"/>
+  </g>
+</svg>

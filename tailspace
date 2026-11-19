@@ -1,0 +1,1722 @@
+#!/bin/bash
+# Tailspace: run Tailscale in rootless mode.
+#
+# One file does everything. `install` copies it into the prefix (~/.tailspace by default). From
+# then on the shell hooks, the supervisor and the updater all run that copy, and the links in
+# ~/.local/bin make `tailspace` and `tailscale` available in every shell.
+#
+# Reading order: settings, helpers, paths and saved settings, network paths, status of the running
+# node, Tailscale releases, process identification, the supervisor, updates, lifecycle, autostart,
+# install and set, the other commands, and the entry point.
+#
+# https://github.com/ttttonyhe/tailspace
+
+set -u
+
+TAILSPACE_VERSION="1.0.0"
+NAME="tailspace"
+SOURCE_URL="${TAILSPACE_SOURCE_URL:-https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace}"
+DEFAULT_PREFIX="$HOME/.tailspace"
+LINK_DIR="$HOME/.local/bin"
+RC_FILES=("$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile" "$HOME/.zshrc")
+SYSTEM_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+PKGS_URL="https://pkgs.tailscale.com/stable"
+CONTROL_KEY_URL="https://controlplane.tailscale.com/key?v=148"
+
+# Tailscale SSH owns port 22 on the tailnet address, so the host's OpenSSH is published here.
+SSH_FALLBACK_PORT=2222
+
+# Supervision, in seconds. Five failed runs in a row, where tailscaled crashes, hangs or stays
+# stuck without ever reaching Tailscale, stop the retries.
+PROBE_INTERVAL=20
+PROBE_TIMEOUT=10
+PROBE_FAILURES=3
+STOP_GRACE=10
+RESTART_DELAY=5
+FAILURE_LIMIT=5
+AUTH_GRACE=120
+
+# Network path switching, in seconds. tailscaled needs up to about four minutes to notice a dead
+# control connection and redial it, so the direct path gets that long before Tailspace steps in.
+# On the proxy path, a failing probe through the proxy is evidence enough after a minute.
+# Moving back to direct is an optimization, not a repair, so it waits out a holddown that doubles
+# whenever direct proves flaky again.
+DIRECT_LOSS_GRACE=240
+PROXY_LOSS_GRACE=60
+PATH_PROBE_TIMEOUT=15
+FAILBACK_CHECK=300
+FAILBACK_HOLDDOWN=900
+FAILBACK_HOLDDOWN_MAX=14400
+FLAP_WINDOW=1800
+
+UPDATE_TICK=300
+UPDATE_INTERVAL_MINUTES=1440
+UPDATE_HEALTH_TIMEOUT=120
+# A rollback goes back to a version known to work, so it gets plenty of time.
+ROLLBACK_HEALTH_TIMEOUT=300
+UPDATE_SOAK=30
+
+READY_TIMEOUT=90
+ENROLL_TIMEOUT=900
+LOG_MAX_BYTES=10485760
+
+DAEMON_PID=""
+WATCHER_PID=""
+UPDATER_PID=""
+FETCHED_DIR=""
+DOWNLOAD_PATH=""
+TMP_PATHS=()
+
+# Install options; saved settings are loaded over the defaults before flags are parsed.
+AUTHKEY="${TS_AUTHKEY:-}"
+TAGS=""
+NODE_NAME=""
+PIN_VERSION=""
+PROXY_OPTION=""
+GIVEN=""
+AUTOSTART=1
+AUTO_UPDATE=1
+SSH=1
+LOG_UPLOAD=1
+UDP_PORT=0
+
+usage() {
+  cat <<EOF
+Tailspace $TAILSPACE_VERSION: run Tailscale in rootless mode.
+
+Usage:
+  $NAME install [options]    Install Tailspace and add this server to your tailnet (safe to re-run)
+  $NAME status               Show whether Tailspace runs, which path it uses, and what it did
+  $NAME start | stop         Start Tailspace, or stop it until the next start
+  $NAME restart              Restart Tailspace; finishes even over Tailscale SSH
+  $NAME set [options]        Change settings without reinstalling
+  $NAME update [VERSION]     Update Tailscale now; a VERSION also turns daily updates off
+  $NAME self-update          Update Tailspace itself
+  $NAME logs [-f]            Show or follow the log
+  $NAME uninstall            Log this server out of your tailnet and remove Tailspace
+
+Options for install and set:
+  --authkey KEY              Auth key, or file:PATH to read it from a file (install only)
+  --tags TAGS                Tags for this server, such as tag:server (install only)
+  --version VERSION          Install this version of Tailscale, daily updates off (install only)
+  --hostname NAME            This server's name in your tailnet
+  --proxy URL | none         HTTP proxy for the proxy path
+  --udp-port PORT            UDP port for direct connections to other devices (default: 0, any)
+  --[no-]autostart           Start Tailspace after a reboot (default: on)
+  --[no-]auto-update         Update Tailscale daily (default: on)
+  --[no-]ssh                 Tailscale SSH on port 22, OpenSSH on 2222 (default: on)
+  --[no-]log-upload          Send Tailscale's diagnostic logs to Tailscale (default: on)
+
+Environment:
+  TS_AUTHKEY                 Same as --authkey, and keeps the key off the command line
+  TAILSPACE_PREFIX           Where to install (default: ~/.tailspace)
+
+Install with one line:
+  curl -fsSL $SOURCE_URL | bash
+EOF
+}
+
+# ---------------------------------------------------------------- helpers
+
+say() { printf '%s\n' "$*"; }
+warn() { printf 'warning: %s\n' "$*" >&2; }
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+log() {
+  printf '%(%Y/%m/%d %H:%M:%S)T %s\n' -1 "$*" >>"$LOG" 2>/dev/null
+}
+
+log_tail() {
+  say "Last lines of $LOG:" >&2
+  tail -n 15 "$LOG" >&2 2>/dev/null
+}
+
+bool() { if [ "$1" = 1 ]; then echo true; else echo false; fi; }
+
+# True when an option was named on this command line.
+given() {
+  case " $GIVEN " in *" $1 "*) return 0 ;; esac
+  return 1
+}
+
+# shellcheck disable=SC2329  # called by trap
+cleanup_tmp() {
+  if [ "${#TMP_PATHS[@]}" -gt 0 ]; then rm -rf "${TMP_PATHS[@]}"; fi
+}
+
+# ---------------------------------------------------------------- paths and saved settings
+
+# A directory is Tailspace's own once install has created its config file and state directory.
+owned_prefix() { [ -f "$1/config" ] && [ -d "$1/state" ]; }
+
+# The prefix is resolved once, so every run spells it the same way: the shell markers, cron lines
+# and process checks all compare it as text. A copy downloaded to a temporary directory never
+# takes that directory for its prefix.
+choose_prefix() {
+  local dir="${SELF%/*}"
+
+  if [ -n "${TAILSPACE_PREFIX:-}" ]; then
+    readlink -m "$TAILSPACE_PREFIX"
+  elif [ "$SELF" != "${TAILSPACE_DOWNLOADED:-}" ] && owned_prefix "$dir"; then
+    echo "$dir"
+  else
+    readlink -m "$DEFAULT_PREFIX"
+  fi
+}
+
+set_paths() {
+  PREFIX="$1"
+  PROGRAM="$PREFIX/$NAME"
+  BIN_DIR="$PREFIX/bin"
+  PREV_BIN_DIR="$PREFIX/bin.prev"
+  CONFIG_FILE="$PREFIX/config"
+  BAD_VERSION_FILE="$PREFIX/bad-version"
+  PREFIX_LOCK="$PREFIX/lock"
+
+  STATE_DIR="$PREFIX/state/$(uname -n)"
+  STATE_LOCK="$STATE_DIR/lock"
+  SOCKET="$STATE_DIR/tailscaled.sock"
+  LOG="$STATE_DIR/tailscaled.log"
+  LOGS_DIR="$STATE_DIR/logs"
+  PROXY_FILE="$STATE_DIR/proxy"
+  PATH_FILE="$STATE_DIR/path"
+  STOPPED_FILE="$STATE_DIR/stopped"
+  ENROLLED_FILE="$STATE_DIR/enrolled"
+  ONLINE_FILE="$STATE_DIR/online"
+  REASON_FILE="$STATE_DIR/restart-reason"
+  UPDATE_STAMP="$STATE_DIR/update-checked"
+  PID_FILE="$STATE_DIR/supervisor.pid"
+
+  HOOK_BEGIN="# >>> $NAME ($PREFIX) >>>"
+  HOOK_END="# <<< $NAME ($PREFIX) <<<"
+  CRON_MARK="# $NAME ($PREFIX)"
+}
+
+# Reads the config file without forking, because the shell hook calls this at every login.
+load_settings() {
+  local key value
+
+  while IFS='=' read -r key value; do
+    case "$key" in AUTOSTART | AUTO_UPDATE | SSH | LOG_UPLOAD | UDP_PORT) printf -v "$key" '%s' "$value" ;; esac
+  done 2>/dev/null <"$CONFIG_FILE"
+}
+
+save_settings() {
+  printf 'AUTOSTART=%s\nAUTO_UPDATE=%s\nSSH=%s\nLOG_UPLOAD=%s\nUDP_PORT=%s\n' \
+    "$AUTOSTART" "$AUTO_UPDATE" "$SSH" "$LOG_UPLOAD" "$UDP_PORT" >"$CONFIG_FILE.tmp" &&
+    mv -f "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+}
+
+require_installed() {
+  [ -d "$STATE_DIR" ] || die "Tailspace isn't installed on this server. Run '$NAME install' first."
+}
+
+# ---------------------------------------------------------------- network paths
+
+# tailscaled reaches the coordination server and DERP relays either directly or through an HTTP
+# proxy. It reads the proxy settings once at startup and never falls back on its own, so the
+# supervisor picks a path before each start and restarts tailscaled to switch. Direct is
+# preferred: on the proxy path, control and relay traffic depend on the proxy, and its uptime
+# (often a VPN's) becomes the node's uptime.
+
+# An empty proxy file records that no proxy is wanted.
+proxy_url() {
+  local url=""
+  { read -r url <"$PROXY_FILE"; } 2>/dev/null
+  printf '%s' "$url"
+}
+
+# The proxy for display, without any credentials in it.
+shown_proxy() {
+  local url
+
+  url=$(proxy_url)
+  case "$url" in *@*) url="http://***@${url##*@}" ;; esac
+  printf '%s' "$url"
+}
+
+current_path() {
+  local path=""
+  { read -r path <"$PATH_FILE"; } 2>/dev/null
+  printf '%s\n' "${path:-direct}"
+}
+
+other_path() { if [ "$1" = direct ]; then echo proxy; else echo direct; fi; }
+
+# Replaces the calling shell with a command running in the environment of a network path, so
+# call it in the background, in a subshell, in a pipeline, or last. The proxy travels in the
+# environment, never in arguments, which other users can read. GODEBUG: some ISPs drop TLS
+# handshakes that carry an ML-KEM key share (tailscale/tailscale#20777), and this outer TLS only
+# wraps traffic that Noise and WireGuard already encrypt.
+with_path() {
+  local path="$1" proxy
+  shift
+
+  proxy=$(proxy_url)
+  unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
+  if [ "$path" = proxy ] && [ -n "$proxy" ]; then
+    export http_proxy="$proxy" https_proxy="$proxy" HTTP_PROXY="$proxy" HTTPS_PROXY="$proxy"
+  fi
+  export GODEBUG=tlsmlkem=0
+  exec "$@"
+}
+
+# The real control protocol from a fresh process. curl can succeed where Go's TLS handshake is
+# reset (tailscale/tailscale#21670), and ts2021 exits 0 even on failure, so read its output.
+path_works() {
+  with_path "$1" timeout -k 5 "$PATH_PROBE_TIMEOUT" "$BIN_DIR/tailscale" debug ts2021 2>&1 | grep -q 'did noise handshake'
+}
+
+# Keeps PREFERRED while it works; otherwise takes the other path if that one works. Without a
+# proxy, only the direct path exists.
+pick_path() {
+  local preferred="$1" other
+
+  if [ -z "$(proxy_url)" ]; then
+    echo direct
+    return
+  fi
+  other=$(other_path "$preferred")
+  if ! path_works "$preferred" && path_works "$other"; then echo "$other"; else echo "$preferred"; fi
+}
+
+# Fetches URL into DEST over one network path. A fourth argument caps the time, for probes.
+download() {
+  local path="$1" url="$2" dest="$3" curl_opts=(--retry 2 -m 600) wget_opts=(-T 60 -t 2)
+
+  if [ -n "${4:-}" ]; then
+    curl_opts=(-m "$4")
+    wget_opts=(-T "$4" -t 1)
+  fi
+  if command -v curl >/dev/null; then
+    (with_path "$path" curl -fsSL --connect-timeout 10 "${curl_opts[@]}" -o "$dest" "$url")
+  else
+    (with_path "$path" wget -q "${wget_opts[@]}" -O "$dest" "$url")
+  fi
+}
+
+# Tries the path known to work first: the one install found, or the one tailscaled uses.
+download_any() {
+  local first="${DOWNLOAD_PATH:-$(current_path)}"
+
+  download "$first" "$1" "$2" 2>/dev/null && return 0
+  [ -n "$(proxy_url)" ] && download "$(other_path "$first")" "$1" "$2" 2>/dev/null
+}
+
+# ---------------------------------------------------------------- status of the running node
+
+ts() { "$BIN_DIR/tailscale" --socket="$SOCKET" "$@"; }
+
+# status --json exits 0 in every backend state, so it only tells whether LocalAPI answers.
+status_json() {
+  timeout -k 5 "$PROBE_TIMEOUT" "$BIN_DIR/tailscale" --socket="$SOCKET" status --json --peers=false 2>/dev/null
+}
+
+# Reads the indented `status --json` output. ipnstate.Status orders its fields Version, ...,
+# Self, ExitNodeStatus, Peer, so the first "Version" is the daemon's and the first "Online" and
+# "DNSName" belong to Self. Bash regexes need no grep, head or cut, which matters in the
+# watcher's loop.
+json_string() {
+  local re="\"$1\": *\"([^\"]*)\""
+  [[ $2 =~ $re ]] && printf '%s\n' "${BASH_REMATCH[1]}"
+}
+
+json_bool() {
+  local re="\"$1\": *([a-z]+)"
+  [[ $2 =~ $re ]] && printf '%s\n' "${BASH_REMATCH[1]}"
+}
+
+daemon_version() {
+  local version
+  version=$(json_string Version "$1")
+  printf '%s\n' "${version%%-*}"
+}
+
+# The node's IPv4 address, from a status.
+node_ip() {
+  local re='"TailscaleIPs": *\[[^]]*"([0-9.]+)"'
+  [[ $1 =~ $re ]] && printf '%s\n' "${BASH_REMATCH[1]}"
+}
+
+# "lab-07 (100.101.102.103)", from a status.
+node_label() {
+  local host
+
+  host=$(json_string DNSName "$1")
+  printf '%s (%s)\n' "${host%%.*}" "$(node_ip "$1")"
+}
+
+# What a backend state other than Running means, and what to do about it.
+state_hint() {
+  case "$1" in
+    NeedsLogin) echo "this server must log in. Run '$NAME install' to log it in." ;;
+    NeedsMachineAuth) echo "this server waits for approval on the Machines page of the admin console." ;;
+    Stopped) echo "Tailscale was turned off with 'tailscale down'. Run 'tailscale up' to reconnect." ;;
+    *) echo "Tailscale is still connecting (${1:-no state yet}). Check '$NAME status' in a minute." ;;
+  esac
+}
+
+# Running only counts once the coordination server is reached, because tailscaled enters
+# Running from its disk cache first. States such as NeedsLogin don't change on their own.
+# shellcheck disable=SC2329  # passed to wait_until
+settled() {
+  local status
+
+  status=$(status_json) || return 1
+  case "$(json_string BackendState "$status")" in
+    "" | NoState | Starting) return 1 ;;
+    Running) [ "$(json_bool Online "$status")" = true ] ;;
+    *) return 0 ;;
+  esac
+}
+
+# shellcheck disable=SC2329  # passed to wait_until
+state_known() {
+  case "$(json_string BackendState "$(status_json)")" in "" | NoState) return 1 ;; esac
+}
+
+# shellcheck disable=SC2329  # passed to wait_until
+api_answers() { status_json >/dev/null; }
+
+# Waits up to READY_TIMEOUT seconds for a check to pass, and stops early once the supervisor has
+# given up. A deadline rather than a count, because each check can itself take seconds.
+wait_until() {
+  local check="$1" deadline=$((SECONDS + READY_TIMEOUT))
+
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if "$check"; then return 0; fi
+    if [ -e "$STOPPED_FILE" ]; then return 1; fi
+    sleep 1
+  done
+  return 1
+}
+
+# Explains why Tailscale didn't come up, then exits.
+fail_to_start() {
+  if [ -e "$STOPPED_FILE" ]; then die "$1: $(stopped_hint "$(cat "$STOPPED_FILE")")"; fi
+  log_tail
+  die "$1 within ${READY_TIMEOUT}s. Tailspace keeps trying in the background; see '$NAME status'."
+}
+
+# ---------------------------------------------------------------- Tailscale releases
+
+tarball_arch() {
+  case "$(uname -m)" in
+    x86_64 | amd64) echo amd64 ;;
+    aarch64 | arm64) echo arm64 ;;
+    armv6* | armv7* | armhf) echo arm ;;
+    i386 | i686) echo 386 ;;
+    riscv64) echo riscv64 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Runs inside $(...), where the EXIT trap doesn't fire, so it removes its own temporary file.
+latest_version() {
+  local json version=""
+
+  json=$(mktemp "$PREFIX/.latest.XXXXXX") || return 1
+  if download_any "$PKGS_URL/?mode=json" "$json"; then
+    version=$(grep -o '"TarballsVersion": *"[^"]*"' "$json" | cut -d'"' -f4)
+  fi
+  rm -f "$json"
+  [ -n "$version" ] && printf '%s\n' "$version"
+}
+
+installed_version() { "$BIN_DIR/tailscaled" --version 2>/dev/null | head -n 1; }
+
+version_gt() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" = "$1" ]; }
+
+# Downloads and test-runs a release, leaving the directory with its binaries in FETCHED_DIR.
+fetch_release() {
+  local version="$1" arch name tmp
+
+  arch=$(tarball_arch) || return 1
+  name="tailscale_${version}_${arch}"
+  tmp=$(mktemp -d "$PREFIX/.download.XXXXXX") || return 1
+  TMP_PATHS+=("$tmp")
+  download_any "$PKGS_URL/$name.tgz" "$tmp/$name.tgz" || return 1
+  tar -xzf "$tmp/$name.tgz" -C "$tmp" || return 1
+  if ! "$tmp/$name/tailscaled" --version >/dev/null 2>&1; then
+    warn "The downloaded tailscaled doesn't run. If programs can't run from $PREFIX, set TAILSPACE_PREFIX to another path."
+    return 1
+  fi
+  FETCHED_DIR="$tmp/$name"
+}
+
+# The current binaries are copied to bin.prev for rollback, then replaced with atomic renames,
+# so bin always holds runnable binaries.
+install_release() {
+  mkdir -p "$BIN_DIR" "$PREV_BIN_DIR" || return 1
+  if [ -x "$BIN_DIR/tailscaled" ]; then cp -p "$BIN_DIR/tailscale" "$BIN_DIR/tailscaled" "$PREV_BIN_DIR/" || return 1; fi
+  mv -f "$FETCHED_DIR/tailscale" "$FETCHED_DIR/tailscaled" "$BIN_DIR/"
+}
+
+# ---------------------------------------------------------------- process identification
+
+# Pods can share the host's PID namespace, so no process is recognized by its name alone. The
+# supervisor holds this host's lock file open as fd 9 and leads its own session; tailscaled is
+# the process started with this host's state directory. Everything comes from /proc.
+
+proc_field() {
+  local stat fields
+
+  { read -r stat <"/proc/$1/stat"; } 2>/dev/null || return 1
+  # Word splitting, not a here-string: bash writes here-strings to a temporary file, which fails
+  # when /tmp is full. The fields are numbers and a one-letter state.
+  # shellcheck disable=SC2206
+  fields=(${stat##*) })
+  printf '%s\n' "${fields[$2]}"
+}
+
+is_child_of() { [ "$(proc_field "$1" 1)" = "$2" ]; }
+
+# Zombies still answer kill -0, and a container without an init never reaps them.
+alive() { kill -0 "$1" 2>/dev/null && [ "$(proc_field "$1" 0)" != Z ]; }
+
+# flock(1) opens its file read-only, and NFS grants exclusive locks only on files open for
+# writing, so locks are taken on a descriptor opened for appending.
+lock_free() { (exec 7>>"$1" && flock -n 7) 2>/dev/null; }
+
+# Prints "PID SID COMM" for every process holding this host's lock file as fd 9: the supervisor,
+# and briefly the subshells it forks.
+lock_holders() {
+  local fd pid comm
+
+  for fd in /proc/[0-9]*/fd/9; do
+    [ "$fd" -ef "$STATE_LOCK" ] || continue
+    pid="${fd#/proc/}"
+    pid="${pid%%/*}"
+    { read -r comm <"/proc/$pid/comm"; } 2>/dev/null || continue
+    printf '%s %s %s\n' "$pid" "$(proc_field "$pid" 3)" "$comm"
+  done
+}
+
+is_supervisor() { [ "$1" = "$2" ] && [ "$3" = "$NAME" ]; }
+
+supervisor_pids() {
+  local pid sid comm
+
+  lock_holders | while read -r pid sid comm; do
+    if is_supervisor "$pid" "$sid" "$comm"; then echo "$pid"; fi
+  done
+}
+
+# The shell hook runs at every login, and a /proc scan costs milliseconds on a busy host, so it
+# checks only the PID the supervisor recorded. A stale or reused PID fails the same identity test.
+supervisor_running() {
+  local pid comm
+
+  { read -r pid <"$PID_FILE" && read -r comm <"/proc/$pid/comm"; } 2>/dev/null &&
+    [ "/proc/$pid/fd/9" -ef "$STATE_LOCK" ] && is_supervisor "$pid" "$(proc_field "$pid" 3)" "$comm"
+}
+
+# tailscaled's SSH helpers run the same binary as `tailscaled be-child ...` and don't match.
+daemon_pids() {
+  local dir comm arg
+
+  for dir in /proc/[0-9]*; do
+    { read -r comm <"$dir/comm"; } 2>/dev/null && [ "$comm" = tailscaled ] || continue
+    while IFS= read -r -d '' arg; do
+      if [ "$arg" = "--statedir=$STATE_DIR" ]; then
+        echo "${dir#/proc/}"
+        break
+      fi
+    done 2>/dev/null <"$dir/cmdline"
+  done
+}
+
+stop_pid() {
+  local pid="$1" deadline=$((SECONDS + $2))
+
+  kill -TERM "$pid" 2>/dev/null || return 0
+  while alive "$pid"; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      kill -KILL "$pid" 2>/dev/null
+      return 0
+    fi
+    sleep 0.2
+  done
+}
+
+# A child may have exited long ago and its PID been reused, so check parenthood first.
+kill_child() {
+  if [ -n "$1" ] && is_child_of "$1" "$$"; then kill "$1" 2>/dev/null; fi
+}
+
+# ---------------------------------------------------------------- supervisor
+
+rotate_log() {
+  local size
+
+  size=$(wc -c <"$LOG" 2>/dev/null) || return 0
+  if [ "$size" -gt "$LOG_MAX_BYTES" ]; then cp "$LOG" "$LOG.1" && : >"$LOG"; fi
+}
+
+in_container() {
+  [ -e /.dockerenv ] || [ -e /run/.containerenv ] || [ -d /var/run/secrets/kubernetes.io ] ||
+    grep -qE 'kubepods|docker|containerd|lxc' /proc/self/cgroup 2>/dev/null
+}
+
+# The CPU count Go sizes its scheduler for by default: the affinity mask, capped by a cgroup quota.
+cpu_budget() {
+  local cpus quota period
+
+  cpus=$(nproc 2>/dev/null || echo 1)
+  { read -r quota period </sys/fs/cgroup/cpu.max; } 2>/dev/null
+  if [ -z "${quota:-}" ] || [ "$quota" = max ]; then
+    { read -r quota </sys/fs/cgroup/cpu/cpu.cfs_quota_us && read -r period </sys/fs/cgroup/cpu/cpu.cfs_period_us; } 2>/dev/null
+  fi
+  case "${quota:-}:${period:-}" in
+    *[!0-9:]* | :* | *:) echo "$cpus" ;;
+    *) quota=$(((quota + period - 1) / period)) && echo $((quota < cpus ? quota : cpus)) ;;
+  esac
+}
+
+# Tuning for rootless nodes:
+# - UDP GSO batches collapse throughput on some container overlay networks (#20858, #20026).
+# - portlist polls listening sockets every second only to fill the admin console.
+# - Short netstack keepalives free connections from dead peers in minutes instead of two hours.
+daemon_env() {
+  echo TS_PORTLIST=false
+  echo TS_NETSTACK_KEEPALIVE_IDLE=60s
+  echo TS_NETSTACK_KEEPALIVE_INTERVAL=15s
+  if in_container; then echo TS_DEBUG_DISABLE_UDP_GSO=true; fi
+}
+
+# tailscaled passes its open descriptors on to the SSH sessions it starts, so it must not get the
+# lock: a session could otherwise hold it after tailscaled is gone.
+start_daemon() {
+  local args=(--tun=userspace-networking --statedir="$STATE_DIR" --socket="$SOCKET" --port="$UDP_PORT") tuning
+
+  if [ "$LOG_UPLOAD" = 0 ]; then args+=(--no-logs-no-support); fi
+  mapfile -t tuning < <(daemon_env)
+  (export "${tuning[@]}" && with_path "$1" "$BIN_DIR/tailscaled" "${args[@]}") </dev/null >>"$LOG" 2>&1 9>&- &
+  DAEMON_PID=$!
+}
+
+# Ends the watcher: records why, so the supervisor knows what to do next, then stops tailscaled.
+restart_for() {
+  log "supervise: $2"
+  printf '%s\n' "$1" >"$REASON_FILE"
+  stop_pid "$DAEMON_PID" "$STOP_GRACE"
+  exit 0
+}
+
+# An install or update holds the prefix lock while it may legitimately be signing in.
+prefix_busy() { ! lock_free "$PREFIX_LOCK"; }
+
+watch_daemon() {
+  local path="$1" self="$BASHPID" failures=0 status state grace offline_since="" auth_since=""
+  local path_was_working=0 failback_due=$((SECONDS + HOLDDOWN)) failback_streak=0
+
+  # A SIGKILLed supervisor can't clean up, so the watcher exits once its parent changes.
+  while sleep "$PROBE_INTERVAL"; is_child_of "$self" "$$"; do
+    rotate_log
+
+    if ! status=$(status_json); then
+      failures=$((failures + 1))
+      log "supervise: LocalAPI probe failed ($failures/$PROBE_FAILURES)"
+      if [ "$failures" -ge "$PROBE_FAILURES" ]; then restart_for hung "tailscaled is unresponsive"; fi
+      continue
+    fi
+    failures=0
+    state=$(json_string BackendState "$status")
+
+    # Signing in again needs a person. Keep waiting while an install may be doing just that.
+    if [ -e "$ENROLLED_FILE" ] && { [ "$state" = NeedsLogin ] || [ "$state" = NeedsMachineAuth ]; } && ! prefix_busy; then
+      auth_since="${auth_since:-$SECONDS}"
+      if [ $((SECONDS - auth_since)) -ge "$AUTH_GRACE" ]; then restart_for needs-login "this server must log in again ($state)"; fi
+      continue
+    fi
+    auth_since=""
+
+    # Online means the coordination server answers. A logged-in node can still be in Starting,
+    # which lasts until a relay or peer connection is up and isn't the supervisor's concern.
+    if [ "$(json_bool Online "$status")" = true ] && { [ "$state" = Running ] || [ "$state" = Starting ]; }; then
+      # Tells the supervisor that this run reached Tailscale.
+      if [ ! -e "$ONLINE_FILE" ]; then
+        : >"$ONLINE_FILE"
+        : >"$ENROLLED_FILE"
+      fi
+      offline_since=""
+      path_was_working=0
+      if [ "$path" = proxy ] && [ "$SECONDS" -ge "$failback_due" ]; then
+        failback_due=$((SECONDS + FAILBACK_CHECK))
+        if path_works direct; then failback_streak=$((failback_streak + 1)); else failback_streak=0; fi
+        if [ "$failback_streak" -ge 2 ]; then restart_for failback "the direct path is back"; fi
+      fi
+      continue
+    fi
+    # Other states, such as NeedsLogin or Stopped, aren't waiting for the network.
+    case "$state" in Running | Starting | NoState) ;; *) continue ;; esac
+
+    # Offline from the coordination server. Give tailscaled time to recover on its own, then act
+    # only on evidence: another path that works, or our own path working while tailscaled is stuck.
+    offline_since="${offline_since:-$SECONDS}"
+    if [ "$path" = proxy ]; then grace="$PROXY_LOSS_GRACE"; else grace="$DIRECT_LOSS_GRACE"; fi
+    [ $((SECONDS - offline_since)) -ge "$grace" ] || continue
+    offline_since="$SECONDS"
+
+    if path_works "$path"; then
+      if [ "$path_was_working" = 1 ]; then restart_for stuck "offline although the $path path works"; fi
+      path_was_working=1
+    elif [ -n "$(proxy_url)" ] && path_works "$(other_path "$path")"; then
+      restart_for failover "the $path path is down; switching to $(other_path "$path")"
+    else
+      # An outage. Look again after a minute rather than a full grace, to catch a returning path.
+      path_was_working=0
+      offline_since=$((SECONDS - grace + PROXY_LOSS_GRACE))
+    fi
+  done
+}
+
+update_loop() {
+  local self="$BASHPID"
+
+  while sleep "$UPDATE_TICK"; is_child_of "$self" "$$"; do
+    if [ -z "$(find "$UPDATE_STAMP" -mmin "-$UPDATE_INTERVAL_MINUTES" 2>/dev/null)" ]; then
+      "$PROGRAM" update-worker --auto >/dev/null 2>&1
+    fi
+  done
+}
+
+# shellcheck disable=SC2329  # called by trap
+supervisor_shutdown() {
+  kill_child "$WATCHER_PID"
+  kill_child "$UPDATER_PID"
+  stop_pid "$DAEMON_PID" "$STOP_GRACE"
+  log "supervise: supervisor stopped"
+  exit 0
+}
+
+# Stops for good: records why (shown by `status`), so autostart leaves the host alone until
+# someone runs `start` or `install`.
+give_up() {
+  printf '%s\n' "$1" >"$STOPPED_FILE" || log "supervise: cannot write $STOPPED_FILE"
+  log "supervise: $2; staying stopped until '$NAME start'"
+  supervisor_shutdown
+}
+
+cmd_supervise() {
+  local pid path repick=1 reason status delay failures=0
+
+  [ -d "$STATE_DIR" ] && [ ! -e "$STOPPED_FILE" ] || exit 0
+  # Running as anyone but the owner would leave state files the owner's tailscaled can't write.
+  [ -O "$STATE_DIR" ] || exit 1
+  load_settings
+
+  # The lock makes this the only supervisor of this host's node. A supervisor that was killed may
+  # have left its tailscaled running, so that one is replaced.
+  exec 9>>"$STATE_LOCK"
+  flock -w 5 9 || exit 0
+  printf '%s\n' "$$" >"$PID_FILE"
+  for pid in $(daemon_pids); do stop_pid "$pid" "$STOP_GRACE"; done
+
+  trap supervisor_shutdown TERM HUP
+  export TS_LOGS_DIR="$LOGS_DIR"
+  # Go starts one scheduler thread per usable core. Eight are plenty for tailscaled and for the
+  # status probes: on a 124-core pod this cut tailscaled from 57 threads to 14 and each probe
+  # from 57 ms of CPU to 15 ms. Smaller budgets are left to Go.
+  if [ "$(cpu_budget)" -gt 8 ]; then export GOMAXPROCS=8; fi
+  log "supervise: Tailspace $TAILSPACE_VERSION started (pid $$)"
+  update_loop 9>&- &
+  UPDATER_PID=$!
+
+  HOLDDOWN="$FAILBACK_HOLDDOWN"
+  LAST_FAILBACK=-$FLAP_WINDOW
+  path=$(current_path)
+
+  while [ -d "$STATE_DIR" ] && [ ! -e "$STOPPED_FILE" ]; do
+    # Path tests can take half a minute. They run in the background without the lock, because a
+    # command substitution would hold the lock and keep a TERM waiting until it finished.
+    if [ "$repick" = 1 ]; then
+      (exec 9>&- && pick_path "$path" >"$PATH_FILE") &
+      wait $!
+      path=$(current_path)
+    else
+      printf '%s\n' "$path" >"$PATH_FILE"
+    fi
+    rm -f "$REASON_FILE" "$ONLINE_FILE"
+    mkdir -p "$LOGS_DIR"
+    rotate_log
+
+    start_daemon "$path"
+    log "supervise: started tailscaled $(installed_version) on the $path path (pid $DAEMON_PID)"
+    watch_daemon "$path" 9>&- &
+    WATCHER_PID=$!
+
+    wait "$DAEMON_PID"
+    status=$?
+    DAEMON_PID=""
+    kill_child "$WATCHER_PID"
+    reason=$(cat "$REASON_FILE" 2>/dev/null)
+    # A run that reached Tailscale proves the setup works, so earlier failures stop counting.
+    if [ -e "$ONLINE_FILE" ]; then failures=0; fi
+    delay="$RESTART_DELAY"
+    repick=1
+
+    case "$reason" in
+      failover)
+        # Leaving direct soon after coming back to it means direct is flaky: back off longer.
+        if [ "$path" = direct ]; then
+          if [ $((SECONDS - LAST_FAILBACK)) -lt "$FLAP_WINDOW" ]; then
+            HOLDDOWN=$((HOLDDOWN * 2 > FAILBACK_HOLDDOWN_MAX ? FAILBACK_HOLDDOWN_MAX : HOLDDOWN * 2))
+          else
+            HOLDDOWN="$FAILBACK_HOLDDOWN"
+          fi
+        fi
+        path=$(other_path "$path")
+        repick=0
+        ;;
+      failback)
+        path=direct
+        repick=0
+        LAST_FAILBACK="$SECONDS"
+        ;;
+      needs-login) give_up needs-login "this server must log in again" ;;
+      update) ;;
+      *)
+        # A crash, a hang or a stuck tailscaled. While an install or update holds the prefix lock,
+        # it is judging the binaries and will put the old ones back, so the supervisor keeps
+        # restarting, every 40 s at most, instead of stopping first.
+        if [ -z "$reason" ]; then log "supervise: tailscaled exited (status $status)"; fi
+        failures=$((failures + 1))
+        if [ "$failures" -ge "$FAILURE_LIMIT" ] && ! prefix_busy; then
+          give_up failing "Tailscale failed $FAILURE_LIMIT times in a row"
+        fi
+        delay=$((RESTART_DELAY << (failures < FAILURE_LIMIT ? failures - 1 : FAILURE_LIMIT - 2)))
+        ;;
+    esac
+    # In the background, so a TERM is handled at once instead of after the sleep.
+    sleep "$delay" 9>&- &
+    wait $!
+  done
+}
+
+# ---------------------------------------------------------------- updates
+
+update_log() {
+  log "update: $*"
+  say "$*"
+}
+
+# Restarts tailscaled onto the binaries on disk and checks that it is healthy: it runs the
+# expected version, LocalAPI answers, it is back online if it was online before, and it survives
+# a soak period. Returns 2 when the outcome says nothing about the release, because Tailspace was
+# stopped or no network path works.
+cycle_daemon() {
+  local expected="$1" was_online="$2" deadline=$((SECONDS + $3)) old pid status
+
+  old=$(daemon_pids)
+  printf 'update\n' >"$REASON_FILE"
+  for pid in $old; do kill -TERM "$pid" 2>/dev/null; done
+
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    sleep 1
+    if [ -e "$STOPPED_FILE" ] || [ -z "$(supervisor_pids)" ]; then return 2; fi
+    pid=$(daemon_pids)
+    if [ -z "$pid" ] || [ "$pid" = "$old" ]; then continue; fi
+    status=$(status_json) || continue
+    [ "$(daemon_version "$status")" = "$expected" ] || continue
+    case "$(json_string BackendState "$status")" in "" | NoState | Starting) continue ;; esac
+    if [ "$was_online" = 1 ] && [ "$(json_bool Online "$status")" != true ]; then continue; fi
+
+    sleep "$UPDATE_SOAK"
+    if [ "$(daemon_pids)" = "$pid" ] && status_json >/dev/null; then return 0; fi
+    break
+  done
+  if path_works direct || { [ -n "$(proxy_url)" ] && path_works proxy; }; then return 1; fi
+  return 2
+}
+
+# Puts the previous release back, and moves tailscaled onto it if Tailspace runs.
+roll_back() {
+  local version="$1" was_online="$2"
+
+  if [ "$("$PREV_BIN_DIR/tailscaled" --version 2>/dev/null | head -n 1)" != "$version" ] ||
+    ! mv -f "$PREV_BIN_DIR/tailscale" "$PREV_BIN_DIR/tailscaled" "$BIN_DIR/"; then
+    update_log "Could not go back to the previous version; see $LOG"
+    return 1
+  fi
+  update_log "Went back to Tailscale $version"
+  if [ ! -e "$STOPPED_FILE" ] && [ -n "$(supervisor_pids)" ] &&
+    ! cycle_daemon "$version" "$was_online" "$ROLLBACK_HEALTH_TIMEOUT"; then
+    update_log "Tailscale $version isn't back online yet; see $LOG"
+  fi
+}
+
+# A version asked for by name would be replaced by the next daily update, so those stop.
+keep_version() {
+  [ -n "$1" ] && [ "$AUTO_UPDATE" = 1 ] || return 0
+  AUTO_UPDATE=0
+  save_settings && say "Daily updates are now off, so Tailscale stays at $1. '$NAME set --auto-update' turns them back on."
+}
+
+update_worker() {
+  local auto=0 pinned="" target ondisk running status was_online=0 result
+
+  if [ "${1:-}" = --auto ]; then
+    auto=1
+    shift
+  fi
+  pinned="${1:-}"
+  target="$pinned"
+  load_settings
+
+  exec 8>>"$PREFIX_LOCK"
+  if ! flock -n 8; then
+    say "Another install or update is running."
+    return 0
+  fi
+  touch "$UPDATE_STAMP"
+  if [ "$auto" = 1 ] && [ "$AUTO_UPDATE" != 1 ]; then return 0; fi
+
+  if [ -z "$target" ]; then target=$(latest_version); fi
+  if [ -z "$target" ]; then
+    # Look again in an hour rather than tomorrow.
+    touch -d '-23 hours' "$UPDATE_STAMP"
+    update_log "Could not look up the latest Tailscale version."
+    return 1
+  fi
+  if [ "$auto" = 1 ] && [ "$target" = "$(cat "$BAD_VERSION_FILE" 2>/dev/null)" ]; then return 0; fi
+
+  # A tailscaled that doesn't answer can't be health-checked, so the update waits.
+  status=$(status_json)
+  running=$(daemon_version "$status")
+  if [ -z "$running" ] && [ -n "$(supervisor_pids)" ]; then
+    update_log "Tailscale isn't answering, so the update waits until tomorrow."
+    return 1
+  fi
+
+  ondisk=$(installed_version)
+  if [ "$target" != "$ondisk" ] && { [ "$auto" = 0 ] || version_gt "$target" "$ondisk"; }; then
+    update_log "Downloading Tailscale $target (installed: ${ondisk:-none})"
+    if ! fetch_release "$target" || ! install_release; then
+      update_log "Failed to download or install Tailscale $target"
+      return 1
+    fi
+    ondisk="$target"
+  fi
+  if [ -z "$running" ] || [ "$running" = "$ondisk" ]; then
+    if [ "$auto" = 0 ]; then say "Tailscale $ondisk is in place."; fi
+    keep_version "$pinned"
+    return 0
+  fi
+  if [ "$(json_bool Online "$status")" = true ]; then was_online=1; fi
+
+  update_log "Restarting Tailscale: $running -> $ondisk"
+  cycle_daemon "$ondisk" "$was_online" "$UPDATE_HEALTH_TIMEOUT"
+  result=$?
+  case "$result" in
+    0)
+      update_log "Updated to Tailscale $ondisk"
+      keep_version "$pinned"
+      return 0
+      ;;
+    1)
+      printf '%s\n' "$ondisk" >"$BAD_VERSION_FILE"
+      update_log "Tailscale $ondisk didn't come back online; going back to $running, and $ondisk won't be installed automatically again"
+      ;;
+    *) update_log "Could not tell whether Tailscale $ondisk works; going back to $running and trying again in a day" ;;
+  esac
+  roll_back "$running" "$was_online"
+  return 1
+}
+
+# ---------------------------------------------------------------- lifecycle
+
+# Starts the supervisor detached from the caller, in a clean environment and outside any
+# directory the caller might unmount. Does nothing if one is already running. fd 8 is closed so
+# the supervisor never inherits the install lock, and HUP is restored for it in case the caller
+# ignores it.
+launch_supervisor() {
+  if supervisor_running; then return 0; fi
+  (trap - HUP && cd / && exec env -i HOME="$HOME" PATH="$SYSTEM_PATH" setsid "$PROGRAM" supervise </dev/null >>"$LOG" 2>&1 8>&-) &
+}
+
+# Stops the supervisor, then anything else on the lock and any tailscaled it left behind, and
+# waits for the lock to clear.
+stop_everything() {
+  local pid i
+
+  for pid in $(supervisor_pids); do stop_pid "$pid" 20; done
+  for pid in $(lock_holders | cut -d' ' -f1) $(daemon_pids); do stop_pid "$pid" "$STOP_GRACE"; done
+  [ -d "$STATE_DIR" ] || return 0
+  for ((i = 0; i < 10; i++)); do
+    if lock_free "$STATE_LOCK"; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+
+report_running() {
+  local status state
+
+  status=$(status_json)
+  state=$(json_string BackendState "$status")
+  if [ "$state" = Running ]; then
+    say "Tailspace is running: $(node_label "$status") on the $(current_path) path."
+  else
+    warn "Tailspace is running, but $(state_hint "$state")"
+  fi
+}
+
+cmd_start() {
+  require_installed
+  rm -f "$STOPPED_FILE"
+  launch_supervisor
+  wait_until settled || fail_to_start "Tailscale did not come up"
+  report_running
+}
+
+cmd_stop() {
+  require_installed
+  printf 'user\n' >"$STOPPED_FILE" || die "Cannot write $STOPPED_FILE"
+  stop_everything || die "Some processes did not stop; see '$NAME status'."
+  say "Tailspace is stopped and stays stopped until '$NAME start'."
+}
+
+# shellcheck disable=SC2329  # passed to wait_until
+restarted() {
+  local current
+
+  current=$(supervisor_pids)
+  [ -n "$current" ] && [ "$current" != "$OLD_SUPERVISORS" ] && settled
+}
+
+# The restart runs in its own session: a session that came in over Tailscale drops when
+# tailscaled stops, and the restart still completes.
+cmd_restart() {
+  require_installed
+  rm -f "$STOPPED_FILE"
+  OLD_SUPERVISORS=$(supervisor_pids)
+  (trap - HUP && exec setsid "$PROGRAM" restart-worker </dev/null >/dev/null 2>&1) &
+  wait_until restarted || fail_to_start "Tailscale did not come back"
+  report_running
+}
+
+# stop is retried until it fully succeeds (tailscaled can hang on a stalled network
+# filesystem), otherwise the new supervisor couldn't take the lock.
+restart_worker() {
+  until stop_everything; do sleep 5; done
+  launch_supervisor
+}
+
+# Updating restarts tailscaled, so the work runs in its own session too.
+cmd_update() {
+  local out pid rc
+
+  require_installed
+  out="$STATE_DIR/update.out"
+  say "Looking for a new version of Tailscale. Installing and watching it can take a few minutes."
+  setsid "$PROGRAM" update-worker "$@" </dev/null >"$out" 2>&1 &
+  pid=$!
+  wait "$pid"
+  rc=$?
+  cat "$out"
+  return "$rc"
+}
+
+# ---------------------------------------------------------------- autostart
+
+# Login shells (interactive SSH, tmux) read the first of ~/.bash_profile, ~/.bash_login and
+# ~/.profile; other bash shells and `ssh host command` read ~/.bashrc; interactive zsh reads
+# ~/.zshrc. The block puts ~/.local/bin on PATH and, with autostart on, runs the autostart check
+# in the background, so a new shell waits for a fork and nothing else, and nothing is printed,
+# so scp and sftp keep working.
+hook_targets() {
+  local login="$HOME/.profile" shell="${SHELL:-}" f
+
+  for f in "$HOME/.bash_login" "$HOME/.bash_profile"; do
+    if [ -e "$f" ]; then login="$f"; fi
+  done
+  printf '%s\n' "$HOME/.bashrc" "$login"
+  if [ -e "$HOME/.zshrc" ] || [ "${shell##*/}" = zsh ]; then printf '%s\n' "$HOME/.zshrc"; fi
+}
+
+hook_block() {
+  printf '%s\n' "$HOOK_BEGIN"
+  # shellcheck disable=SC2016  # written into the rc file, expanded by the user's shell
+  printf '%s\n' 'case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac'
+  if [ "$AUTOSTART" = 1 ]; then
+    printf 'if [ -x "%s" ]; then ("%s" autostart </dev/null >/dev/null 2>&1 &); fi\n' "$PROGRAM" "$PROGRAM"
+  fi
+  printf '%s\n' "$HOOK_END"
+}
+
+# mode=add puts the block first, ahead of the early `return` that many distributions' ~/.bashrc
+# has for non-interactive shells; mode=remove only drops it. The file is rewritten through a
+# temporary copy and an atomic rename that keep its permissions.
+rewrite_hook() {
+  local file mode="$2" tmp line skip=0
+
+  file=$(readlink -f "$1")
+  if [ ! -e "$file" ]; then
+    [ "$mode" = add ] || return 0
+    : >"$file" || return 1
+  fi
+  if [ "$mode" = remove ] && ! grep -qxF "$HOOK_BEGIN" "$file"; then return 0; fi
+
+  tmp=$(mktemp "$file.XXXXXX") || return 1
+  TMP_PATHS+=("$tmp")
+  cp -p "$file" "$tmp" || return 1
+  {
+    if [ "$mode" = add ]; then hook_block; fi
+    while IFS= read -r line || [ -n "$line" ]; do
+      if [ "$line" = "$HOOK_BEGIN" ]; then skip=1; fi
+      if [ "$skip" = 0 ]; then printf '%s\n' "$line"; fi
+      if [ "$line" = "$HOOK_END" ]; then skip=0; fi
+    done <"$file"
+  } >"$tmp" || return 1
+  if [ "$skip" = 1 ]; then
+    warn "A $NAME block in $file has no end marker; left the file unchanged."
+    return 1
+  fi
+  mv -f "$tmp" "$file"
+}
+
+hooked_files() {
+  local f
+
+  for f in "${RC_FILES[@]}"; do
+    if grep -qxF "$HOOK_BEGIN" "$f" 2>/dev/null; then printf '%s\n' "${f##*/}"; fi
+  done
+}
+
+cron_present() { crontab -l 2>/dev/null | grep -qF "$CRON_MARK"; }
+
+# Where a cron daemon runs, these bring the node back after a reboot even if nobody logs in.
+# A crontab that can't be read is never rewritten, or the user's own lines would be lost.
+cron_set() {
+  local current
+
+  command -v crontab >/dev/null || return 1
+  if ! current=$(crontab -l 2>/dev/null); then
+    crontab -l 2>&1 | grep -q 'no crontab' || return 1
+    current=""
+  fi
+  {
+    if [ -n "$current" ]; then printf '%s\n' "$current" | grep -vF "$CRON_MARK"; fi
+    if [ "$1" = add ]; then
+      printf '@reboot "%s" autostart %s\n' "$PROGRAM" "$CRON_MARK"
+      printf '*/5 * * * * "%s" autostart %s\n' "$PROGRAM" "$CRON_MARK"
+    fi
+  } | crontab - 2>/dev/null
+}
+
+install_hooks() {
+  local rc
+
+  while IFS= read -r rc; do
+    rewrite_hook "$rc" add || warn "Could not update $rc"
+  done < <(hook_targets)
+  if [ "$AUTOSTART" = 1 ]; then
+    cron_set add || true
+  elif cron_present; then
+    cron_set remove || true
+  fi
+}
+
+# The hook and cron entry point: silent, and a no-op when Tailspace was stopped or disabled.
+cmd_autostart() {
+  [ -d "$STATE_DIR" ] && [ ! -e "$STOPPED_FILE" ] || return 0
+  load_settings
+  [ "$AUTOSTART" = 1 ] || return 0
+  launch_supervisor
+}
+
+# ---------------------------------------------------------------- install and set
+
+parse_options() {
+  local allow="$1" option value
+  shift
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --*=*)
+        set -- "${1%%=*}" "${1#*=}" "${@:2}"
+        continue
+        ;;
+      --autostart | --no-autostart | --auto-update | --no-auto-update | --ssh | --no-ssh | --log-upload | --no-log-upload)
+        option="${1#--}"
+        value=1
+        case "$option" in no-*)
+          option="${option#no-}"
+          value=0
+          ;;
+        esac
+        shift
+        ;;
+      --authkey | --tags | --version | --hostname | --proxy | --udp-port)
+        [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value."
+        option="${1#--}"
+        value="$2"
+        shift 2
+        ;;
+      *) die "Unknown option: $1. Run '$NAME help'." ;;
+    esac
+    GIVEN="$GIVEN $option"
+    case "$allow:$option" in
+      install:authkey) AUTHKEY="$value" ;;
+      install:tags) TAGS="$value" ;;
+      install:version) PIN_VERSION="$value" ;;
+      *:hostname) NODE_NAME="$value" ;;
+      *:proxy) PROXY_OPTION="$value" ;;
+      *:udp-port)
+        case "$value" in *[!0-9]* | ??????*) die "--udp-port needs 0, or a port from 1024 to 65535." ;; esac
+        value=$((10#$value))
+        [ "$value" -eq 0 ] || { [ "$value" -ge 1024 ] && [ "$value" -le 65535 ]; } ||
+          die "--udp-port needs 0, or a port from 1024 to 65535."
+        UDP_PORT="$value"
+        ;;
+      *:autostart) AUTOSTART="$value" ;;
+      *:auto-update) AUTO_UPDATE="$value" ;;
+      *:ssh) SSH="$value" ;;
+      *:log-upload) LOG_UPLOAD="$value" ;;
+      *) die "--$option isn't available for '$NAME $allow'." ;;
+    esac
+  done
+  # The next daily update would replace a pinned version.
+  if [ -n "$PIN_VERSION" ]; then AUTO_UPDATE=0; fi
+}
+
+# The proxy to fall back on. --proxy always wins; the caller's https_proxy or http_proxy counts
+# only while nothing is saved, so `--proxy none` sticks. Only http:// works: tailscaled speaks
+# plain HTTP CONNECT to the proxy, even for socks5:// URLs.
+save_proxy() {
+  local url="$PROXY_OPTION" from_env=0
+
+  if [ -z "$url" ] && [ ! -e "$PROXY_FILE" ]; then
+    url="${https_proxy:-${HTTPS_PROXY:-${http_proxy:-${HTTP_PROXY:-none}}}}"
+    from_env=1
+  fi
+  url="${url%/}"
+  # Like curl, read an address without a scheme as an HTTP proxy.
+  case "$url" in "" | none | *://*) ;; *) url="http://$url" ;; esac
+  case "$url" in
+    "") ;;
+    none) : >"$PROXY_FILE" ;;
+    http://*) printf '%s\n' "$url" >"$PROXY_FILE" ;;
+    *)
+      warn "Ignoring proxy $url: Tailscale can only use http:// proxies."
+      if [ "$from_env" = 1 ]; then : >"$PROXY_FILE"; fi
+      ;;
+  esac
+}
+
+preflight() {
+  local missing
+
+  [ "$EUID" -ne 0 ] || die "Run Tailspace as a regular user. With root, use Tailscale's official installer."
+  [ "$(uname -s)" = Linux ] || die "Tailspace only supports Linux."
+  ((BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 2))) || die "Tailspace needs bash 4.2 or newer."
+  version_gt "$(uname -r | cut -d- -f1)" 3.2 || [ "$(uname -r | cut -d- -f1)" = 3.2 ] || die "Tailscale needs Linux 3.2 or newer."
+  tarball_arch >/dev/null || die "Unsupported CPU architecture: $(uname -m)"
+  # The supervisor runs with the system PATH only, so that is where the tools must be.
+  missing=$(
+    PATH="$SYSTEM_PATH"
+    for cmd in flock setsid timeout tar gzip mktemp readlink sort find grep cut head tail wc cksum paste env sleep nproc; do
+      command -v "$cmd" >/dev/null || printf '%s ' "$cmd"
+    done
+    command -v curl >/dev/null || command -v wget >/dev/null || printf 'curl-or-wget '
+  )
+  [ -z "$missing" ] || die "Missing commands in $SYSTEM_PATH: $missing"
+  [ "${#SOCKET}" -le 107 ] || die "The socket path is too long (${#SOCKET} > 107): $SOCKET. Set TAILSPACE_PREFIX to a shorter path."
+  if [ -S /var/run/tailscale/tailscaled.sock ] || [ -S /run/tailscale/tailscaled.sock ]; then
+    warn "Tailscale is already installed with root on this server; Tailspace adds it to your tailnet a second time, as a separate device."
+  fi
+}
+
+# The prefix must be Tailspace's own, because uninstall deletes what is in it, and private,
+# because it holds programs that run as you.
+prepare_directories() {
+  if [ -n "$(ls -A "$PREFIX" 2>/dev/null)" ] && ! owned_prefix "$PREFIX"; then
+    die "$PREFIX already holds other files. Set TAILSPACE_PREFIX to a new or empty directory."
+  fi
+  { mkdir -p "$STATE_DIR" && chmod 700 "$PREFIX" "$STATE_DIR"; } || die "Cannot create $STATE_DIR"
+  [ -f "$CONFIG_FILE" ] || save_settings || die "Cannot write $CONFIG_FILE"
+  lock_free "$STATE_LOCK" || [ -n "$(lock_holders)" ] ||
+    die "File locks don't work under $PREFIX. Set TAILSPACE_PREFIX to a short path on a local disk."
+}
+
+# The coordination server must be reachable to sign in. The path that reaches it is the one the
+# downloads that follow try first.
+check_network() {
+  local proxy
+
+  proxy=$(shown_proxy)
+  if download direct "$CONTROL_KEY_URL" /dev/null "$PATH_PROBE_TIMEOUT" 2>/dev/null; then
+    DOWNLOAD_PATH=direct
+  elif [ -z "$proxy" ]; then
+    die "Cannot reach controlplane.tailscale.com. If this server needs a proxy, pass --proxy http://HOST:PORT."
+  elif download proxy "$CONTROL_KEY_URL" /dev/null "$PATH_PROBE_TIMEOUT" 2>/dev/null; then
+    DOWNLOAD_PATH=proxy
+    warn "The direct path doesn't reach Tailscale right now; using the proxy path through $proxy."
+  else
+    die "Cannot reach controlplane.tailscale.com, directly or through $proxy."
+  fi
+}
+
+# Returns 0 when the installed copy changed and the supervisor must restart to run it.
+install_program() {
+  local tmp
+
+  [ "$SELF" != "$PROGRAM" ] || return 1
+  if [ -f "$PROGRAM" ] && [ "$(cksum <"$SELF")" = "$(cksum <"$PROGRAM")" ]; then return 1; fi
+  tmp=$(mktemp "$PREFIX/.$NAME.XXXXXX") || die "Cannot write to $PREFIX"
+  TMP_PATHS+=("$tmp")
+  if ! { cp "$SELF" "$tmp" && chmod 755 "$tmp" && mv -f "$tmp" "$PROGRAM"; }; then die "Cannot install $PROGRAM"; fi
+}
+
+# Returns 0 when new binaries were installed. With auto-update off, the version changes only when
+# asked for, and a failed lookup keeps whatever is installed.
+install_tailscale() {
+  local target="$PIN_VERSION" current
+
+  current=$(installed_version)
+  if [ -z "$target" ]; then
+    if [ -n "$current" ] && [ "$AUTO_UPDATE" = 0 ]; then return 1; fi
+    target=$(latest_version)
+  fi
+  if [ -z "$target" ]; then
+    [ -n "$current" ] || die "Could not look up the latest Tailscale version at $PKGS_URL."
+    warn "Could not look up the latest Tailscale version; keeping $current."
+    return 1
+  fi
+  [ "$current" != "$target" ] || return 1
+  say "Downloading Tailscale $target ..."
+  { fetch_release "$target" && install_release; } || die "Failed to download or install Tailscale $target."
+}
+
+link_command() {
+  local link="$LINK_DIR/$1" current
+
+  if [ -e "$link" ] || [ -L "$link" ]; then
+    current=$(readlink -f "$link")
+    case "$current" in
+      "$PREFIX"/*) ;;
+      *)
+        warn "$link exists and isn't Tailspace's; left it alone."
+        return 0
+        ;;
+    esac
+  fi
+  ln -sfn "$PROGRAM" "$link"
+}
+
+install_links() {
+  mkdir -p "$LINK_DIR" || return 1
+  link_command "$NAME" && link_command tailscale
+}
+
+read_authkey() {
+  local key="$AUTHKEY" file
+
+  # file:PATH keeps the key off every command line, for example when installing over ssh.
+  if [ "${key#file:}" != "$key" ]; then
+    file="${key#file:}"
+    key=""
+    { read -r key <"$file"; } 2>/dev/null
+    [ -n "$key" ] || die "Cannot read an auth key from $file"
+  fi
+  case "$key" in
+    tskey-client-*)
+      [ -n "$TAGS" ] || die "An OAuth client secret needs --tags, for example --tags tag:server."
+      # Nodes from OAuth secrets are ephemeral unless told otherwise; servers must persist.
+      case "$key" in *\?*) ;; *) key="$key?ephemeral=false&preauthorized=true" ;; esac
+      ;;
+  esac
+  printf '%s' "$key"
+}
+
+# Applies the SSH setting and any hostname to a node that has joined.
+apply_node_settings() {
+  local args=(set --ssh="$(bool "$SSH")" --accept-risk=lose-ssh)
+
+  if [ -n "$NODE_NAME" ]; then args+=(--hostname="$NODE_NAME"); fi
+  ts "${args[@]}" || die "'tailscale set' failed."
+}
+
+# Joins the tailnet, signs in again, or updates the settings of a node that already joined.
+enroll() {
+  local key="$1" state prefs re='"AdvertiseTags": *\[([^]]*)\]' args out rc
+
+  wait_until state_known
+  state=$(json_string BackendState "$(status_json)")
+  case "$state" in
+    NeedsLogin | NeedsMachineAuth) ;;
+    Stopped)
+      warn "Tailscale was turned off with 'tailscale down'; run 'tailscale up' to reconnect."
+      return 0
+      ;;
+    *)
+      apply_node_settings
+      return 0
+      ;;
+  esac
+
+  # `tailscale up` refuses to run on a node that joined before unless every setting that differs
+  # from the default is repeated, so carry over the two that install sets.
+  prefs=$(ts debug prefs 2>/dev/null)
+  if [ -z "$NODE_NAME" ]; then NODE_NAME=$(json_string Hostname "$prefs"); fi
+  if [ -z "$TAGS" ] && [[ $prefs =~ $re ]]; then TAGS=$(printf '%s' "${BASH_REMATCH[1]}" | tr -d ' \t\n"'); fi
+
+  args=(up --ssh="$(bool "$SSH")" --accept-risk=lose-ssh --timeout="${ENROLL_TIMEOUT}s")
+  if [ -n "$TAGS" ]; then args+=(--advertise-tags="$TAGS"); fi
+  if [ -n "$NODE_NAME" ]; then args+=(--hostname="$NODE_NAME"); fi
+  out="$STATE_DIR/enroll.out"
+  TMP_PATHS+=("$out")
+  if [ -z "$key" ]; then
+    say "Open the link below in a browser and log in to add this server to your tailnet."
+    ts "${args[@]}" 2>&1 | tee "$out"
+    rc=${PIPESTATUS[0]}
+  else
+    # Handed over through a pipe: command lines are visible to every user in /proc.
+    ts "${args[@]}" --auth-key="file:"<(printf '%s' "$key") 2>&1 | tee "$out"
+    rc=${PIPESTATUS[0]}
+  fi
+  [ "$rc" != 0 ] || return 0
+
+  # Settings changed by hand with `tailscale set` must be repeated too; Tailscale prints the
+  # command it wants, and the node itself is fine.
+  if grep -q 'requires mentioning all' "$out"; then
+    die "Run the 'tailscale up' command that Tailscale printed above, adding --auth-key, to log this server in again."
+  fi
+
+  # Leave nothing running in the background after a failed sign-in.
+  printf 'enroll-failed\n' >"$STOPPED_FILE"
+  stop_everything
+  die "Could not add this server to your tailnet (see above). The usual causes are an expired, revoked or used-up auth key, or a tag your policy doesn't define. Fix that and run '$NAME install' again."
+}
+
+listening() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+# With Tailscale SSH on port 22, the host's OpenSSH stays reachable on the tailnet at port 2222.
+# The forward is left out when no OpenSSH listens on port 22, and when something of yours
+# already listens on 2222, which tailscaled then reaches directly.
+publish_openssh() {
+  if [ "$SSH" = 1 ] && listening 22 && ! listening "$SSH_FALLBACK_PORT"; then
+    ts serve --bg --tcp "$SSH_FALLBACK_PORT" tcp://localhost:22 >/dev/null 2>&1 ||
+      warn "Could not make OpenSSH reachable on port $SSH_FALLBACK_PORT."
+  else
+    ts serve --tcp "$SSH_FALLBACK_PORT" off >/dev/null 2>&1
+  fi
+}
+
+# Reads the first line the port sends; SSH servers send their banner first.
+ssh_answers() {
+  local banner=""
+
+  read -r -t 8 banner < <(sleep 8 | timeout 8 "$BIN_DIR/tailscale" --socket="$SOCKET" nc "$1" "$2" 2>/dev/null)
+  case "$banner" in "SSH-2.0-$3"*) return 0 ;; esac
+  return 1
+}
+
+summarize() {
+  local status state ip host user
+
+  status=$(status_json)
+  state=$(json_string BackendState "$status")
+  if [ "$state" != Running ]; then
+    warn "Tailspace is installed, but $(state_hint "$state")"
+    return 0
+  fi
+  host=$(json_string DNSName "$status")
+  host="${host%%.*}"
+  ip=$(node_ip "$status")
+  user=$(id -un)
+
+  say ""
+  say "Done. $(node_label "$status") is on your tailnet, on the $(current_path) path, running Tailscale $(installed_version)."
+  say ""
+  say "SSH in from any of your devices:"
+  if [ "$SSH" = 1 ]; then
+    if ssh_answers "$ip" 22 Tailscale; then say "  ssh $user@$host"; else warn "Tailscale SSH isn't answering on port 22."; fi
+    if ssh_answers "$ip" "$SSH_FALLBACK_PORT" OpenSSH; then say "  ssh -p $SSH_FALLBACK_PORT $user@$host     (OpenSSH)"; fi
+  elif ssh_answers "$ip" 22 OpenSSH; then
+    say "  ssh $user@$host"
+  else
+    warn "Nothing answers SSH on this server: Tailscale SSH is off and OpenSSH doesn't listen on port 22."
+  fi
+  if [ -n "$TAGS" ] && ! printf '%s' "$status" | grep -q '"tag:'; then
+    warn "This server has no tags yet. Add $TAGS on the Machines page of the admin console."
+  fi
+}
+
+cmd_install() {
+  local stale=0 key
+
+  # Finish even if the terminal goes away, as a session that came in over Tailscale does.
+  trap '' HUP
+  load_settings
+  parse_options install "$@"
+  preflight
+  key=$(read_authkey) || exit 1
+  if given authkey && [ "${AUTHKEY#file:}" = "$AUTHKEY" ]; then
+    warn "Other users can read command lines. Next time pass the key as TS_AUTHKEY or --authkey file:PATH."
+  fi
+  prepare_directories
+  exec 8>>"$PREFIX_LOCK"
+  if ! flock -n 8; then
+    say "Waiting for another install or update to finish ..."
+    flock -w 300 8 || die "Another install or update is still running."
+  fi
+  save_settings || die "Cannot write $CONFIG_FILE"
+  save_proxy
+  check_network
+
+  if install_program; then stale=1; fi
+  if install_tailscale; then stale=1; fi
+  install_links || warn "Could not create the links in $LINK_DIR"
+  install_hooks
+  rm -f "$STOPPED_FILE"
+
+  if [ -z "$(supervisor_pids)" ]; then
+    launch_supervisor
+    stale=0
+  fi
+  wait_until api_answers || fail_to_start "tailscaled did not start"
+  enroll "$key"
+  # Tailscale's own auto-update needs root and would only fail every hour; Tailspace updates instead.
+  ts set --auto-update=false >/dev/null 2>&1 || warn "Could not turn off Tailscale's built-in auto-update."
+  publish_openssh
+
+  # The running supervisor started from the old program or binaries; switch it over last,
+  # because it briefly disconnects sessions that came in over Tailscale.
+  if [ "$stale" = 1 ]; then
+    exec 8>&-
+    cmd_restart >/dev/null
+  else
+    wait_until settled || fail_to_start "Tailscale did not come online"
+  fi
+  summarize
+}
+
+# Changes only the options named. With a home shared by several hosts the saved settings are
+# shared too, but each host's node is touched only by commands run on that host.
+cmd_set() {
+  local before args=()
+
+  require_installed
+  load_settings
+  before="$LOG_UPLOAD $UDP_PORT $(proxy_url)"
+  parse_options set "$@"
+  if given ssh; then args+=(--ssh="$(bool "$SSH")" --accept-risk=lose-ssh); fi
+  if given hostname; then args+=(--hostname="$NODE_NAME"); fi
+  if [ "${#args[@]}" -gt 0 ] && ! api_answers; then
+    die "Tailscale isn't running, so --ssh and --hostname can't take effect. Run '$NAME start' first."
+  fi
+
+  save_settings || die "Cannot write $CONFIG_FILE"
+  save_proxy
+  install_hooks
+  if [ "${#args[@]}" -gt 0 ]; then ts set "${args[@]}" || die "'tailscale set' failed."; fi
+  if given ssh; then publish_openssh; fi
+  # Log upload, the UDP port and the proxy are read when tailscaled starts, so they need a restart.
+  if [ "$before" != "$LOG_UPLOAD $UDP_PORT $(proxy_url)" ] && [ -n "$(supervisor_pids)" ]; then cmd_restart >/dev/null; fi
+  status_summary
+}
+
+# ---------------------------------------------------------------- status, logs, updates of Tailspace, uninstall
+
+stopped_hint() {
+  case "$1" in
+    user) echo "stopped with '$NAME stop'. Run '$NAME start' to start it again." ;;
+    needs-login) echo "this server must log in again. Run '$NAME install' to log it in." ;;
+    failing) echo "Tailscale failed $FAILURE_LIMIT times in a row. Read '$NAME logs', then run '$NAME start'." ;;
+    enroll-failed) echo "adding this server to your tailnet failed. Run '$NAME install' with a valid auth key." ;;
+    *) echo "$1" ;;
+  esac
+}
+
+status_summary() {
+  local supervisors daemons proxy path state route
+
+  say "Tailspace $TAILSPACE_VERSION · $PREFIX · $(uname -n)"
+  if [ ! -d "$STATE_DIR" ]; then
+    say "Not installed on this server. Run '$NAME install'."
+    return 1
+  fi
+  load_settings
+  supervisors=$(supervisor_pids | paste -sd, -)
+  daemons=$(daemon_pids | paste -sd, -)
+  proxy=$(shown_proxy)
+  path=$(current_path)
+
+  if [ -e "$STOPPED_FILE" ]; then
+    state="stopped: $(stopped_hint "$(cat "$STOPPED_FILE")")"
+  elif [ -n "$supervisors" ]; then
+    state="running (supervisor $supervisors, tailscaled ${daemons:-starting})"
+  else
+    state="not running. Run '$NAME start'."
+  fi
+  if [ -z "$proxy" ]; then
+    route="direct path"
+  elif [ "$path" = proxy ]; then
+    route="proxy path through $proxy, back to the direct path once it works"
+  else
+    route="direct path; proxy path through $proxy"
+  fi
+  say ""
+  say "  State        $state"
+  say "  Path         $route"
+  say "  Tailscale    $(installed_version), auto-update $([ "$AUTO_UPDATE" = 1 ] && echo daily || echo off)"
+  say "  Autostart    $([ "$AUTOSTART" = 1 ] && echo "on: $(hooked_files | paste -sd' ' -)$(cron_present && echo ', crontab')" || echo off)"
+  say "  SSH          $([ "$SSH" = 1 ] && echo "Tailscale SSH on port 22, OpenSSH on port $SSH_FALLBACK_PORT" || echo "OpenSSH on port 22")"
+}
+
+cmd_status() {
+  status_summary || return 1
+  say ""
+  if [ -n "$(daemon_pids)" ]; then
+    ts status
+    if ! status_json | grep -q '"cache-network-maps"'; then
+      say ""
+      say "Tip: turn on cache-network-maps in your policy, so that after a restart this server reaches your other devices sooner. See the README."
+    fi
+    say ""
+  fi
+  say "Recent events:"
+  grep -E ' (supervise|update): ' "$LOG" 2>/dev/null | tail -n 6 | sed 's/^/  /'
+}
+
+cmd_logs() {
+  require_installed
+  [ -f "$LOG" ] || die "No log yet at $LOG"
+  if [ "${1:-}" = -f ]; then exec tail -n 50 -F "$LOG"; fi
+  tail -n 100 "$LOG"
+}
+
+cmd_version() {
+  local version
+
+  version=$(installed_version)
+  say "Tailspace $TAILSPACE_VERSION"
+  say "Tailscale ${version:-not installed}"
+}
+
+# Fetches the latest Tailspace and reinstalls with it; saved settings carry over.
+cmd_self_update() {
+  local tmp
+
+  require_installed
+  tmp=$(mktemp "${TMPDIR:-/tmp}/$NAME.XXXXXX") || die "Cannot create a temporary file."
+  TMP_PATHS+=("$tmp")
+  download_any "$SOURCE_URL" "$tmp" || die "Cannot download Tailspace from $SOURCE_URL"
+  bash -n "$tmp" || die "The downloaded Tailspace is damaged."
+  if [ "$(cksum <"$tmp")" = "$(cksum <"$PROGRAM")" ]; then
+    say "Tailspace $TAILSPACE_VERSION is the latest."
+    return 0
+  fi
+  TAILSPACE_PREFIX="$PREFIX" bash "$tmp" install
+}
+
+cmd_uninstall() {
+  local rc
+
+  owned_prefix "$PREFIX" || die "No Tailspace installation found at $PREFIX"
+  # Logging out ends a session that came in over Tailscale; finish anyway.
+  trap '' HUP
+  # Keeps the shell hooks from starting Tailspace again halfway through.
+  if [ -d "$STATE_DIR" ]; then printf 'user\n' >"$STOPPED_FILE"; fi
+  if cron_present; then cron_set remove || true; fi
+  if api_answers; then
+    if ts logout >/dev/null 2>&1; then say "Logged this server out of your tailnet."; else warn "Could not log this server out; remove it on the Machines page of the admin console."; fi
+  else
+    warn "Tailscale isn't running, so it can't log this server out. Remove the server on the Machines page of the admin console."
+  fi
+  stop_everything || warn "Some processes did not stop."
+  rm -rf "$STATE_DIR"
+
+  if [ -n "$(find "$PREFIX/state" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
+    say "Other servers still use $PREFIX, so its programs and the shell check stay."
+    return 0
+  fi
+  for rc in "${RC_FILES[@]}"; do rewrite_hook "$rc" remove; done
+  for rc in "$LINK_DIR/$NAME" "$LINK_DIR/tailscale"; do
+    if [ "$(readlink -f "$rc" 2>/dev/null)" = "$PROGRAM" ]; then rm -f "$rc"; fi
+  done
+  rm -rf "$BIN_DIR" "$PREV_BIN_DIR" "$PREFIX/state" "$PREFIX"/.download.*
+  rm -f "$CONFIG_FILE" "$CONFIG_FILE.tmp" "$BAD_VERSION_FILE" "$PREFIX_LOCK" "$PREFIX"/.latest.* "$PREFIX/.$NAME".* "$PROGRAM"
+  rmdir "$PREFIX" 2>/dev/null || say "Kept $PREFIX because it contains other files."
+  say "Uninstalled."
+}
+
+# ---------------------------------------------------------------- entry point
+
+# Piped in (curl | bash), there is no file to copy into the prefix, so fetch one and run that.
+# Piped in without arguments, as the README shows, it installs.
+fetch_self_and_exec() {
+  local tmp
+
+  if [ $# -eq 0 ]; then set -- install; fi
+
+  tmp=$(mktemp "${TMPDIR:-/tmp}/$NAME.XXXXXX") || die "Cannot create a temporary file."
+  if ! curl -fsSL -o "$tmp" "$SOURCE_URL" 2>/dev/null && ! wget -q -O "$tmp" "$SOURCE_URL" 2>/dev/null; then
+    rm -f "$tmp"
+    die "Cannot download Tailspace from $SOURCE_URL"
+  fi
+  TAILSPACE_DOWNLOADED=$(readlink -f "$tmp") exec bash "$tmp" "$@"
+}
+
+main() {
+  local arg
+
+  trap cleanup_tmp EXIT
+  # bash names a piped-in script's source "main".
+  if [ "${BASH_SOURCE[0]:-main}" = main ] || [ ! -f "${BASH_SOURCE[0]}" ]; then fetch_self_and_exec "$@"; fi
+  SELF=$(readlink -f "${BASH_SOURCE[0]}")
+  if [ "${TAILSPACE_DOWNLOADED:-}" = "$SELF" ]; then TMP_PATHS+=("$SELF"); fi
+  set_paths "$(choose_prefix)"
+
+  # Invoked through the `tailscale` link: be the Tailscale CLI for this node, on its current path.
+  if [ "${0##*/}" = tailscale ]; then
+    with_path "$(current_path)" "$BIN_DIR/tailscale" --socket="$SOCKET" "$@"
+  fi
+
+  # `tailspace uninstall --help` must explain, never act.
+  for arg in "$@"; do
+    case "$arg" in -h | --help)
+      usage
+      exit 0
+      ;;
+    esac
+  done
+  case "${1:-help}" in
+    install | set | update-worker) ;;
+    logs) [ $# -eq 1 ] || { [ $# -eq 2 ] && [ "$2" = -f ]; } || die "Usage: $NAME logs [-f]" ;;
+    update) [ $# -le 2 ] || die "Usage: $NAME update [VERSION]" ;;
+    *) [ $# -le 1 ] || die "'$NAME $1' takes no arguments. Run '$NAME help'." ;;
+  esac
+
+  case "${1:-help}" in
+    install) shift && cmd_install "$@" ;;
+    set) shift && cmd_set "$@" ;;
+    status) cmd_status ;;
+    start) cmd_start ;;
+    stop) cmd_stop ;;
+    restart) cmd_restart ;;
+    update) shift && cmd_update "$@" ;;
+    self-update) cmd_self_update ;;
+    logs) shift && cmd_logs "$@" ;;
+    uninstall) cmd_uninstall ;;
+    version | --version) cmd_version ;;
+    help) usage ;;
+    autostart) cmd_autostart ;;
+    supervise) cmd_supervise ;;
+    restart-worker) restart_worker ;;
+    update-worker) shift && update_worker "$@" ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+  esac
+}
+
+# On one line, so bash has read the exit before main runs, even if the file is overwritten in place.
+main "$@"; exit
