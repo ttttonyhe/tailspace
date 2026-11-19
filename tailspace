@@ -13,7 +13,7 @@
 
 set -u
 
-TAILSPACE_VERSION="1.0.0"
+TAILSPACE_VERSION="1.0.1"
 NAME="tailspace"
 SOURCE_URL="${TAILSPACE_SOURCE_URL:-https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace}"
 DEFAULT_PREFIX="$HOME/.tailspace"
