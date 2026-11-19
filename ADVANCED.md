@@ -6,7 +6,7 @@ English · [简体中文](ADVANCED.zh-CN.md)
 
 ## Installing with an auth key
 
-If you set up servers from a script, or just don't want to open a browser, install with an auth key. If the key carries a tag, the server's key won't expire either, because Tailscale turns off key expiry for tagged devices.
+If you set up servers from a script, or just don't want to open a browser, install with an auth key. If the key carries a tag, the server also never has to log in again, because Tailscale turns off key expiry for tagged devices.
 
 1. Define the tag in your [access control policy](https://login.tailscale.com/admin/acls/file). The easiest way is to replace the policy with [`examples/policy.hujson`](examples/policy.hujson), which defines `tag:server`, lets everyone in your tailnet SSH into tagged servers, and keeps tagged servers from connecting to your other devices. If you've customized your policy, copy over only the parts you need.
 2. [Generate an auth key](https://login.tailscale.com/admin/settings/keys) with the tag `tag:server`. Make it reusable if you'll use it on more than one server, and keep it secret, since anyone who has it can add devices to your tailnet.
@@ -22,7 +22,7 @@ Passing the key in `TS_AUTHKEY` keeps it off the process list, where other users
 
 Tailspace turns on Tailscale SSH, so you log in with your Tailscale identity instead of SSH keys. Tailscale SSH takes port 22. If the server also runs OpenSSH, Tailspace makes it available on port 2222, so `ssh -p 2222 you@lab-07` still works with your usual keys and config.
 
-Tailscale's default policy runs Tailscale SSH in check mode, which asks you to confirm in the browser every 12 hours. To skip that, change `"check"` to `"accept"` in the policy's `ssh` rule.
+Tailscale's default policy runs Tailscale SSH in check mode, which asks you to log in again in the browser every 12 hours. To skip that, change `"check"` to `"accept"` in the policy's `ssh` rule.
 
 Every other port goes straight to the server. A Jupyter notebook listening on port 8888, for example, is at `lab-07:8888`.
 
@@ -40,7 +40,7 @@ So on a server without cron, Tailspace comes back the first time you log in afte
 
 ### Network outages and proxies
 
-Tailscale is online while it can reach its coordination server, the service that manages your tailnet. Most servers reach it directly. Others have a direct connection that is slow or blocked for some sites, plus an HTTP proxy, which in mainland China often runs over a VPN that drops now and then. Tailspace calls these two ways out the direct path and the proxy path.
+Tailscale is online while it can reach its coordination server, the service that manages your tailnet. Most servers reach it directly. Some also have an HTTP proxy, because their direct connection is slow or blocked for some sites. In mainland China, such a proxy often runs over a VPN that drops now and then. Tailspace calls these two ways out the direct path and the proxy path.
 
 Tailscale reads its proxy setting only when it starts, so it can't switch paths by itself. When the path in use stops working and the other one works, the supervisor restarts Tailscale on the other path.
 

@@ -6,7 +6,7 @@
 
 ## 用 auth key 安装
 
-如果你用脚本部署服务器，或者只是不想打开浏览器，可以用 auth key 安装。如果 key 带有标签，服务器的密钥也不会过期，因为 Tailscale 默认为带标签的设备关闭密钥过期。
+如果你用脚本部署服务器，或者只是不想打开浏览器，可以用 auth key 安装。如果 key 带有标签，服务器以后也不用重新登录，因为 Tailscale 默认为带标签的设备关闭密钥过期。
 
 1. 在你的[访问控制策略](https://login.tailscale.com/admin/acls/file)里定义这个标签。最简单的做法是用 [`examples/policy.hujson`](examples/policy.hujson) 替换现有策略。它定义了 `tag:server`，允许 tailnet 里的所有人 SSH 到带标签的服务器，并禁止带标签的服务器连接你的其他设备。如果你改过自己的策略，只复制需要的部分即可。
 2. [生成一个 auth key](https://login.tailscale.com/admin/settings/keys)，标签选 `tag:server`。如果要在多台服务器上使用，记得勾选 Reusable。请妥善保管它，任何拿到它的人都能往你的 tailnet 里添加设备。
@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace 
 
 Tailspace 会开启 Tailscale SSH，你用 Tailscale 身份登录，不需要 SSH 密钥。Tailscale SSH 占用 22 端口。如果服务器上还运行着 OpenSSH，Tailspace 会让它在 2222 端口上可用，所以 `ssh -p 2222 you@lab-07` 依然可以用你平时的密钥和配置。
 
-Tailscale 的默认策略让 Tailscale SSH 以 check 模式运行，每 12 小时要你在浏览器里确认一次。不想这样，就把策略 `ssh` 规则里的 `"check"` 改成 `"accept"`。
+Tailscale 的默认策略让 Tailscale SSH 以 check 模式运行，每 12 小时要你在浏览器里重新登录一次。不想这样，就把策略 `ssh` 规则里的 `"check"` 改成 `"accept"`。
 
 其他端口都直通服务器。比如服务器上监听 8888 端口的 Jupyter Notebook，访问 `lab-07:8888` 就能打开。
 
@@ -40,7 +40,7 @@ Tailscale 崩溃后，监管进程会在 5 秒后重新启动它。
 
 ### 网络故障与代理
 
-只要能连上协调服务器，也就是管理你 tailnet 的那个服务，Tailscale 就是在线的。大多数服务器可以直接连上它。另一些服务器直连某些网站很慢或被屏蔽，但另有一个 HTTP 代理，在中国大陆，这类代理常常跑在一条时不时会断的 VPN 上。Tailspace 把这两种出路分别叫作直连路径和代理路径。
+只要能连上协调服务器，也就是管理你 tailnet 的那个服务，Tailscale 就是在线的。大多数服务器可以直接连上它。有些服务器直连某些网站很慢或被屏蔽，所以另有一个 HTTP 代理。在中国大陆，这类代理常常跑在一条时不时会断的 VPN 上。Tailspace 把这两种出路分别叫作直连路径和代理路径。
 
 Tailscale 只在启动时读取代理设置，所以没法自己切换路径。当正在使用的路径不通、而另一条通时，监管进程会在另一条路径上重启 Tailscale。
 
