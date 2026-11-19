@@ -1602,7 +1602,7 @@ cmd_status() {
     ts status
     if ! status_json | grep -q '"cache-network-maps"'; then
       say ""
-      say "Tip: turn on cache-network-maps in your policy, so that after a restart this server reaches your other devices sooner. See the README."
+      say "Tip: turn on cache-network-maps in your policy, so that after a restart this server reaches your other devices sooner. See ADVANCED.md in the Tailspace repository."
     fi
     say ""
   fi
