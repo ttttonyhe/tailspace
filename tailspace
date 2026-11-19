@@ -13,7 +13,7 @@
 
 set -u
 
-TAILSPACE_VERSION="1.0.1"
+TAILSPACE_VERSION="1.1.0"
 NAME="tailspace"
 SOURCE_URL="${TAILSPACE_SOURCE_URL:-https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace}"
 DEFAULT_PREFIX="$HOME/.tailspace"
@@ -36,6 +36,8 @@ STOP_GRACE=10
 RESTART_DELAY=5
 FAILURE_LIMIT=5
 AUTH_GRACE=120
+# A stop holds the stop lock while it ends every process, which takes up to about 40 s.
+STOP_LOCK_WAIT=60
 
 # Network path switching, in seconds. tailscaled needs up to about four minutes to notice a dead
 # control connection and redial it, so the direct path gets that long before Tailspace steps in.
@@ -193,7 +195,8 @@ set_paths() {
 
   HOOK_BEGIN="# >>> $NAME ($PREFIX) >>>"
   HOOK_END="# <<< $NAME ($PREFIX) <<<"
-  CRON_MARK="# $NAME ($PREFIX)"
+  # cron reads an unescaped % as a line break.
+  CRON_MARK="# $NAME (${PREFIX//"%"/\\%})"
 }
 
 # Reads the config file without forking, because the shell hook calls this at every login.
@@ -213,6 +216,35 @@ save_settings() {
 
 require_installed() {
   [ -d "$STATE_DIR" ] || die "Tailspace isn't installed on this server. Run '$NAME install' first."
+}
+
+# Commands, the supervisor and autostart change the stopped file from different processes, so
+# each change runs under this lock, which a stop holds while it ends every process.
+with_stop_lock() {
+  local rc=1
+
+  if ! { exec 6>>"$STATE_DIR/stopped.lock"; } 2>/dev/null; then
+    warn "Cannot open $STATE_DIR/stopped.lock"
+    return 1
+  fi
+  if flock -w "$STOP_LOCK_WAIT" 6; then
+    "$@"
+    rc=$?
+  else
+    warn "Another start or stop of Tailspace is still running."
+  fi
+  exec 6>&-
+  return "$rc"
+}
+
+# Writes REASON as the stopped file. Autostart only needs the file to exist, and a full disk still
+# lets it be created, empty.
+# shellcheck disable=SC2329  # run through with_stop_lock
+mark_stopped() {
+  { printf '%s\n' "$1" >"$STOPPED_FILE"; } 2>/dev/null || { [ -e "$STOPPED_FILE" ] && [ ! -s "$STOPPED_FILE" ]; } || {
+    warn "Cannot write $STOPPED_FILE"
+    return 1
+  }
 }
 
 # ---------------------------------------------------------------- network paths
@@ -267,8 +299,9 @@ with_path() {
 
 # The real control protocol from a fresh process. curl can succeed where Go's TLS handshake is
 # reset (tailscale/tailscale#21670), and ts2021 exits 0 even on failure, so read its output.
+# grep writes nowhere, so one that outlives a killed caller holds no file open.
 path_works() {
-  with_path "$1" timeout -k 5 "$PATH_PROBE_TIMEOUT" "$BIN_DIR/tailscale" debug ts2021 2>&1 | grep -q 'did noise handshake'
+  with_path "$1" timeout -k 5 "$PATH_PROBE_TIMEOUT" "$BIN_DIR/tailscale" debug ts2021 2>&1 | grep -q 'did noise handshake' >/dev/null 2>&1
 }
 
 # Keeps PREFERRED while it works; otherwise takes the other path if that one works. Without a
@@ -397,7 +430,7 @@ wait_until() {
 
 # Explains why Tailscale didn't come up, then exits.
 fail_to_start() {
-  if [ -e "$STOPPED_FILE" ]; then die "$1: $(stopped_hint "$(cat "$STOPPED_FILE")")"; fi
+  if [ -e "$STOPPED_FILE" ]; then die "$1: $(stopped_hint)"; fi
   log_tail
   die "$1 within ${READY_TIMEOUT}s. Tailspace keeps trying in the background; see '$NAME status'."
 }
@@ -515,6 +548,20 @@ supervisor_running() {
     [ "/proc/$pid/fd/9" -ef "$STATE_LOCK" ] && is_supervisor "$pid" "$(proc_field "$pid" 3)" "$comm"
 }
 
+# Processes in session SID.
+session_pids() {
+  local dir stat fields
+
+  for dir in /proc/[0-9]*; do
+    stat=""
+    # The whole record, because a process name can hold a newline; the fields follow its last ")".
+    { read -r -d '' stat <"$dir/stat"; } 2>/dev/null
+    # shellcheck disable=SC2206  # numbers and a one-letter state, as in proc_field
+    fields=(${stat##*) })
+    if [ "${#fields[@]}" -gt 3 ] && [ "${fields[3]}" = "$1" ]; then echo "${dir#/proc/}"; fi
+  done
+}
+
 # tailscaled's SSH helpers run the same binary as `tailscaled be-child ...` and don't match.
 daemon_pids() {
   local dir comm arg
@@ -548,6 +595,54 @@ kill_child() {
   if [ -n "$1" ] && is_child_of "$1" "$$"; then kill "$1" 2>/dev/null; fi
 }
 
+# The root filesystem in a mountinfo file: device, root within it, type, source and options of the
+# mount on / that no other mount on / is stacked on. Not the mount ID, which Linux reuses and which
+# differs between mount namespaces that see the same files.
+root_fs() {
+  local id parent device root point rest i j covered
+  local -a ids=() parents=() found=()
+
+  while read -r id parent device root point rest; do
+    if [ "$point" = / ]; then
+      ids+=("$id")
+      parents+=("$parent")
+      found+=("$device $root ${rest#* - }")
+    fi
+  done 2>/dev/null <"$1"
+  for ((i = 0; i < ${#ids[@]}; i++)); do
+    covered=0
+    for ((j = 0; j < ${#ids[@]}; j++)); do
+      if [ "$j" != "$i" ] && [ "${parents[j]}" = "${ids[i]}" ]; then covered=1; fi
+    done
+    if [ "$covered" = 0 ]; then
+      printf '%s\n' "${found[i]}"
+      return 0
+    fi
+  done
+  echo
+}
+
+# This boot of the server, or this run of its container: the kernel's boot ID and a checksum of
+# the root filesystem, which a new container gets fresh. Tests pass their own mountinfo file.
+# shellcheck disable=SC2329  # called from functions run through with_stop_lock
+current_boot() {
+  local id="" fs upper sum=""
+
+  { read -r id </proc/sys/kernel/random/boot_id; } 2>/dev/null
+  fs=$(root_fs "${1:-/proc/self/mountinfo}")
+  # A remount changes options within a boot, so they're dropped, except an overlay's upper
+  # directory, which tells one container from the next.
+  case "$fs" in
+    *" overlay "*upperdir=*)
+      upper="${fs##*upperdir=}"
+      fs="${fs%% overlay *} ${upper%%,*}"
+      ;;
+    *) fs="${fs% *}" ;;
+  esac
+  read -r sum _ < <(printf '%s\n' "$fs" | cksum)
+  printf '%s-%s\n' "$id" "$sum"
+}
+
 # ---------------------------------------------------------------- supervisor
 
 rotate_log() {
@@ -557,7 +652,10 @@ rotate_log() {
   if [ "$size" -gt "$LOG_MAX_BYTES" ]; then cp "$LOG" "$LOG.1" && : >"$LOG"; fi
 }
 
+# Linux numbers the initial cgroup namespace 4026531835, so any other number means a container,
+# which gets a namespace of its own on cgroup v2. Kernels before 4.6 have no cgroup namespaces.
 in_container() {
+  case "$(readlink /proc/self/ns/cgroup 2>/dev/null)" in "" | "cgroup:[4026531835]") ;; *) return 0 ;; esac
   [ -e /.dockerenv ] || [ -e /run/.containerenv ] || [ -d /var/run/secrets/kubernetes.io ] ||
     grep -qE 'kubepods|docker|containerd|lxc' /proc/self/cgroup 2>/dev/null
 }
@@ -595,7 +693,9 @@ start_daemon() {
 
   if [ "$LOG_UPLOAD" = 0 ]; then args+=(--no-logs-no-support); fi
   mapfile -t tuning < <(daemon_env)
-  (export "${tuning[@]}" && with_path "$1" "$BIN_DIR/tailscaled" "${args[@]}") </dev/null >>"$LOG" 2>&1 9>&- &
+  # A session of its own, which commands run over Tailscale SSH without a terminal stay in, so the
+  # supervisor's sweep of its own session never reaches them.
+  (export "${tuning[@]}" && with_path "$1" setsid "$BIN_DIR/tailscaled" "${args[@]}") </dev/null >>"$LOG" 2>&1 9>&- &
   DAEMON_PID=$!
 }
 
@@ -610,12 +710,17 @@ restart_for() {
 # An install or update holds the prefix lock while it may legitimately be signing in.
 prefix_busy() { ! lock_free "$PREFIX_LOCK"; }
 
+# Whether fd 8 holds the prefix lock file that is in place. Uninstall deletes that file while holding
+# it, so a process that waited for it ends up with a lock no one else sees.
+lock_current() { [ /proc/self/fd/8 -ef "$PREFIX_LOCK" ]; }
+
 watch_daemon() {
   local path="$1" self="$BASHPID" failures=0 status state grace offline_since="" auth_since=""
   local path_was_working=0 failback_due=$((SECONDS + HOLDDOWN)) failback_streak=0
 
-  # A SIGKILLed supervisor can't clean up, so the watcher exits once its parent changes.
-  while sleep "$PROBE_INTERVAL"; is_child_of "$self" "$$"; do
+  # A SIGKILLed supervisor can't clean up, so the watcher exits once its parent changes. Its sleep
+  # outlives a killed watcher, so it stays off the log, which on NFS would block uninstall.
+  while sleep "$PROBE_INTERVAL" >/dev/null 2>&1; is_child_of "$self" "$$"; do
     rotate_log
 
     if ! status=$(status_json); then
@@ -678,27 +783,46 @@ watch_daemon() {
 update_loop() {
   local self="$BASHPID"
 
-  while sleep "$UPDATE_TICK"; is_child_of "$self" "$$"; do
+  # Like the watcher's, the sleep outlives a killed loop and so stays off the log.
+  while sleep "$UPDATE_TICK" >/dev/null 2>&1; is_child_of "$self" "$$"; do
     if [ -z "$(find "$UPDATE_STAMP" -mmin "-$UPDATE_INTERVAL_MINUTES" 2>/dev/null)" ]; then
-      "$PROGRAM" update-worker --auto >/dev/null 2>&1
+      # A session of its own, so that stopping Tailspace never kills an update halfway.
+      setsid "$PROGRAM" update-worker --auto >/dev/null 2>&1
     fi
   done
 }
 
 # shellcheck disable=SC2329  # called by trap
 supervisor_shutdown() {
+  local pid
+
   kill_child "$WATCHER_PID"
   kill_child "$UPDATER_PID"
   stop_pid "$DAEMON_PID" "$STOP_GRACE"
+  # Probes and sleeps that outlived their loop are still in this session. tailscaled and updates
+  # run in sessions of their own.
+  for pid in $(session_pids "$$"); do
+    if [ "$pid" != "$$" ]; then kill -TERM "$pid" 2>/dev/null; fi
+  done
   log "supervise: supervisor stopped"
   exit 0
 }
 
-# Stops for good: records why (shown by `status`), so autostart leaves the host alone until
-# someone runs `start` or `install`.
+# A give-up, "REASON BOOT", never replaces a stop that came first. The supervisor shuts down still
+# holding the stop lock, so a start waits until it's gone instead of finding it on its way out.
+# shellcheck disable=SC2329  # run through with_stop_lock
+give_up_now() {
+  [ -e "$STOPPED_FILE" ] || printf '%s %s\n' "$1" "$(current_boot)" >"$STOPPED_FILE" || log "supervise: cannot write $STOPPED_FILE"
+  log "supervise: $2; staying stopped until '$NAME start'$([ "$AUTOSTART" = 1 ] && echo ' or a reboot')"
+  supervisor_shutdown
+}
+
+# Stops and records why, for `status`, with the current boot: autostart starts Tailspace again on
+# a later boot, because a reboot may clear the cause. Without the lock, it still shuts down.
 give_up() {
-  printf '%s\n' "$1" >"$STOPPED_FILE" || log "supervise: cannot write $STOPPED_FILE"
-  log "supervise: $2; staying stopped until '$NAME start'"
+  load_settings
+  # Waits briefly: a stop that holds the lock has recorded itself already and is ending this process.
+  STOP_LOCK_WAIT=2 with_stop_lock give_up_now "$1" "$2"
   supervisor_shutdown
 }
 
@@ -714,6 +838,9 @@ cmd_supervise() {
   # have left its tailscaled running, so that one is replaced.
   exec 9>>"$STATE_LOCK"
   flock -w 5 9 || exit 0
+  # A stop or an uninstall may have come while this waited for the lock, and a start after it must not
+  # take this exiting supervisor for a running one.
+  [ -d "$STATE_DIR" ] && [ ! -e "$STOPPED_FILE" ] || exit 0
   printf '%s\n' "$$" >"$PID_FILE"
   for pid in $(daemon_pids); do stop_pid "$pid" "$STOP_GRACE"; done
 
@@ -732,17 +859,20 @@ cmd_supervise() {
   path=$(current_path)
 
   while [ -d "$STATE_DIR" ] && [ ! -e "$STOPPED_FILE" ]; do
-    # Path tests can take half a minute. They run in the background without the lock, because a
-    # command substitution would hold the lock and keep a TERM waiting until it finished.
+    # Path tests can take half a minute, so they run in the background without the lock: a command
+    # substitution would hold it and keep a TERM waiting. A killed test leaves the path file alone.
     if [ "$repick" = 1 ]; then
-      (exec 9>&- && pick_path "$path" >"$PATH_FILE") &
+      (exec 9>&- && pick_path "$path" >"$PATH_FILE.new" && mv -f "$PATH_FILE.new" "$PATH_FILE") &
       wait $!
       path=$(current_path)
     else
       printf '%s\n' "$path" >"$PATH_FILE"
     fi
+    # A stop or an uninstall may have come during the path test. mkdir without -p, which would
+    # bring a deleted state directory back.
+    if [ ! -d "$STATE_DIR" ] || [ -e "$STOPPED_FILE" ]; then break; fi
+    mkdir "$LOGS_DIR" 2>/dev/null || [ -d "$LOGS_DIR" ] || break
     rm -f "$REASON_FILE" "$ONLINE_FILE"
-    mkdir -p "$LOGS_DIR"
     rotate_log
 
     start_daemon "$path"
@@ -790,12 +920,14 @@ cmd_supervise() {
           give_up failing "Tailscale failed $FAILURE_LIMIT times in a row"
         fi
         delay=$((RESTART_DELAY << (failures < FAILURE_LIMIT ? failures - 1 : FAILURE_LIMIT - 2)))
+        log "supervise: next try in ${delay}s"
         ;;
     esac
     # In the background, so a TERM is handled at once instead of after the sleep.
     sleep "$delay" 9>&- &
     wait $!
   done
+  supervisor_shutdown
 }
 
 # ---------------------------------------------------------------- updates
@@ -827,6 +959,8 @@ cycle_daemon() {
     if [ "$was_online" = 1 ] && [ "$(json_bool Online "$status")" != true ]; then continue; fi
 
     sleep "$UPDATE_SOAK"
+    # A stop during the soak says nothing about the release.
+    if [ -e "$STOPPED_FILE" ] || [ -z "$(supervisor_pids)" ]; then return 2; fi
     if [ "$(daemon_pids)" = "$pid" ] && status_json >/dev/null; then return 0; fi
     break
   done
@@ -868,11 +1002,17 @@ update_worker() {
   target="$pinned"
   load_settings
 
+  # Uninstall may be removing this server, and opening the lock file now would create one it never
+  # deletes.
+  [ -d "$STATE_DIR" ] || return 0
   exec 8>>"$PREFIX_LOCK"
   if ! flock -n 8; then
     say "Another install or update is running."
     return 0
   fi
+  lock_current || return 0
+  # Uninstall may have removed this server before the update got the lock.
+  [ -d "$STATE_DIR" ] || return 0
   touch "$UPDATE_STAMP"
   if [ "$auto" = 1 ] && [ "$AUTO_UPDATE" != 1 ]; then return 0; fi
 
@@ -930,17 +1070,17 @@ update_worker() {
 
 # ---------------------------------------------------------------- lifecycle
 
-# Starts the supervisor detached from the caller, in a clean environment and outside any
-# directory the caller might unmount. Does nothing if one is already running. fd 8 is closed so
-# the supervisor never inherits the install lock, and HUP is restored for it in case the caller
-# ignores it.
+# Starts the supervisor detached, in a clean environment, outside any directory the caller might
+# unmount, and unless one runs. It never inherits the install or stop lock, fds 8 and 6, and gets HUP
+# back in case the caller ignores it.
 launch_supervisor() {
   if supervisor_running; then return 0; fi
-  (trap - HUP && cd / && exec env -i HOME="$HOME" PATH="$SYSTEM_PATH" setsid "$PROGRAM" supervise </dev/null >>"$LOG" 2>&1 8>&-) &
+  (trap - HUP && cd / && exec env -i HOME="$HOME" PATH="$SYSTEM_PATH" TAILSPACE_PREFIX="$PREFIX" setsid "$PROGRAM" supervise </dev/null >>"$LOG" 2>&1 8>&- 6>&-) &
 }
 
-# Stops the supervisor, then anything else on the lock and any tailscaled it left behind, and
-# waits for the lock to clear.
+# Stops the supervisor, which clears its own session, then any other holder of the lock and any
+# tailscaled left behind. Done once the lock is free and no tailscaled is left, as a killed one exits
+# a moment later.
 stop_everything() {
   local pid i
 
@@ -948,7 +1088,7 @@ stop_everything() {
   for pid in $(lock_holders | cut -d' ' -f1) $(daemon_pids); do stop_pid "$pid" "$STOP_GRACE"; done
   [ -d "$STATE_DIR" ] || return 0
   for ((i = 0; i < 10; i++)); do
-    if lock_free "$STATE_LOCK"; then return 0; fi
+    if lock_free "$STATE_LOCK" && [ -z "$(daemon_pids)" ]; then return 0; fi
     sleep 1
   done
   return 1
@@ -966,19 +1106,36 @@ report_running() {
   fi
 }
 
+# start and stop each run whole under the stop lock, so one that runs at the same time as the other
+# comes entirely before or after it.
+# shellcheck disable=SC2329  # run through with_stop_lock
+start_now() {
+  rm -f "$STOPPED_FILE" || return 1
+  launch_supervisor
+}
+
+# Records REASON as the stop and ends every process. Returns 2 if some process didn't stop.
+# shellcheck disable=SC2329  # run through with_stop_lock
+stop_now() {
+  mark_stopped "$1" || return 1
+  stop_everything || return 2
+}
+
 cmd_start() {
   require_installed
-  rm -f "$STOPPED_FILE"
-  launch_supervisor
+  with_stop_lock start_now || exit 1
   wait_until settled || fail_to_start "Tailscale did not come up"
   report_running
 }
 
 cmd_stop() {
   require_installed
-  printf 'user\n' >"$STOPPED_FILE" || die "Cannot write $STOPPED_FILE"
-  stop_everything || die "Some processes did not stop; see '$NAME status'."
-  say "Tailspace is stopped and stays stopped until '$NAME start'."
+  with_stop_lock stop_now user
+  case $? in
+    0) say "Tailspace is stopped and stays stopped until '$NAME start'." ;;
+    2) die "Some processes did not stop; see '$NAME status'." ;;
+    *) exit 1 ;;
+  esac
 }
 
 # shellcheck disable=SC2329  # passed to wait_until
@@ -993,9 +1150,9 @@ restarted() {
 # tailscaled stops, and the restart still completes.
 cmd_restart() {
   require_installed
-  rm -f "$STOPPED_FILE"
+  with_stop_lock rm -f "$STOPPED_FILE" || exit 1
   OLD_SUPERVISORS=$(supervisor_pids)
-  (trap - HUP && exec setsid "$PROGRAM" restart-worker </dev/null >/dev/null 2>&1) &
+  (trap - HUP && exec setsid "$PROGRAM" restart-worker </dev/null >/dev/null 2>&1 8>&-) &
   wait_until restarted || fail_to_start "Tailscale did not come back"
   report_running
 }
@@ -1004,7 +1161,8 @@ cmd_restart() {
 # filesystem), otherwise the new supervisor couldn't take the lock.
 restart_worker() {
   until stop_everything; do sleep 5; done
-  launch_supervisor
+  # The old supervisor may have given up just before it stopped; the restart starts a new one anyway.
+  with_stop_lock start_now
 }
 
 # Updating restarts tailscaled, so the work runs in its own session too.
@@ -1053,31 +1211,33 @@ hook_block() {
 # has for non-interactive shells; mode=remove only drops it. The file is rewritten through a
 # temporary copy and an atomic rename that keep its permissions.
 rewrite_hook() {
-  local file mode="$2" tmp line skip=0
+  local file mode="$2" tmp line skip=0 content=""
 
   file=$(readlink -f "$1")
   if [ ! -e "$file" ]; then
     [ "$mode" = add ] || return 0
     : >"$file" || return 1
   fi
-  if [ "$mode" = remove ] && ! grep -qxF "$HOOK_BEGIN" "$file"; then return 0; fi
+  if [ "$mode" = remove ]; then
+    grep -qxF "$HOOK_BEGIN" "$file"
+    case $? in 0) ;; 1) return 0 ;; *) return 1 ;; esac
+  fi
 
-  tmp=$(mktemp "$file.XXXXXX") || return 1
-  TMP_PATHS+=("$tmp")
-  cp -p "$file" "$tmp" || return 1
-  {
-    if [ "$mode" = add ]; then hook_block; fi
-    while IFS= read -r line || [ -n "$line" ]; do
-      if [ "$line" = "$HOOK_BEGIN" ]; then skip=1; fi
-      if [ "$skip" = 0 ]; then printf '%s\n' "$line"; fi
-      if [ "$line" = "$HOOK_END" ]; then skip=0; fi
-    done <"$file"
-  } >"$tmp" || return 1
+  if [ "$mode" = add ]; then content="$(hook_block)"$'\n'; fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$line" = "$HOOK_BEGIN" ]; then skip=1; fi
+    if [ "$skip" = 0 ]; then content+="$line"$'\n'; fi
+    if [ "$line" = "$HOOK_END" ]; then skip=0; fi
+  done <"$file"
   if [ "$skip" = 1 ]; then
     warn "A $NAME block in $file has no end marker; left the file unchanged."
     return 1
   fi
-  mv -f "$tmp" "$file"
+  # Written through cat, whose status covers the close, where NFS reports a full disk, so a full disk
+  # can't swap in a cut-off copy.
+  tmp=$(mktemp "$file.XXXXXX") || return 1
+  TMP_PATHS+=("$tmp")
+  cp -p "$file" "$tmp" && printf '%s' "$content" | cat >"$tmp" && mv -f "$tmp" "$file"
 }
 
 hooked_files() {
@@ -1090,27 +1250,18 @@ hooked_files() {
 
 cron_present() { crontab -l 2>/dev/null | grep -qF "$CRON_MARK"; }
 
-# Stacked mounts on / list the visible one last.
-root_mount() {
-  local id point last=""
-
-  while read -r id _ _ _ point _; do
-    if [ "$point" = / ]; then last=$id; fi
-  done 2>/dev/null <"/proc/$1/mountinfo"
-  echo "$last"
-}
-
-# A cron daemon reads our crontab only if it sees our filesystem. A container that shares the host's
-# PID namespace sees the host's crond, which reads the host's crontabs, so root mounts must match.
-# Where other users' processes are hidden, as with hidepid, assume cron works.
+# A cron daemon reads our crontab only if it sees our filesystem: with hostPID, a pod sees the host's
+# crond, which reads the host's crontabs. Where that can't be checked, as with hidepid, assume cron
+# works.
 cron_runs() {
   local dir comm self
 
   [ -r /proc/1/comm ] || return 0
-  self=$(root_mount self)
+  self=$(root_fs /proc/self/mountinfo)
+  [ -n "$self" ] || return 0
   for dir in /proc/[0-9]*; do
     { read -r comm <"$dir/comm"; } 2>/dev/null || continue
-    if { [ "$comm" = cron ] || [ "$comm" = crond ]; } && [ "$(root_mount "${dir#/proc/}")" = "$self" ]; then return 0; fi
+    if { [ "$comm" = cron ] || [ "$comm" = crond ]; } && [ "$(root_fs "$dir/mountinfo")" = "$self" ]; then return 0; fi
   done
   return 1
 }
@@ -1118,20 +1269,22 @@ cron_runs() {
 # Where a cron daemon runs, these bring the node back after a reboot even if nobody logs in.
 # A crontab that can't be read is never rewritten, or the user's own lines would be lost.
 cron_set() {
-  local current
+  local current lines
 
   command -v crontab >/dev/null || return 1
   if ! current=$(crontab -l 2>/dev/null); then
     crontab -l 2>&1 | grep -q 'no crontab' || return 1
     current=""
   fi
-  {
+  lines=$(
     if [ -n "$current" ]; then printf '%s\n' "$current" | grep -vF "$CRON_MARK"; fi
     if [ "$1" = add ]; then
-      printf '@reboot "%s" autostart %s\n' "$PROGRAM" "$CRON_MARK"
-      printf '*/5 * * * * "%s" autostart %s\n' "$PROGRAM" "$CRON_MARK"
+      printf '@reboot "%s" autostart >/dev/null 2>&1 %s\n' "${PROGRAM//"%"/\\%}" "$CRON_MARK"
+      printf '*/5 * * * * "%s" autostart >/dev/null 2>&1 %s\n' "${PROGRAM//"%"/\\%}" "$CRON_MARK"
     fi
-  } | crontab - 2>/dev/null
+  )
+  # With nothing left, the crontab goes too, as it was before install.
+  if [ -n "$lines" ]; then printf '%s\n' "$lines" | crontab - 2>/dev/null; else crontab -r 2>/dev/null || ! crontab -l >/dev/null 2>&1; fi
 }
 
 install_hooks() {
@@ -1147,11 +1300,26 @@ install_hooks() {
   fi
 }
 
-# The hook and cron entry point: silent, and a no-op when Tailspace was stopped or disabled.
+# Succeeds when nothing keeps Tailspace stopped: no stopped file, or a give-up, "REASON BOOT", from
+# an earlier boot, which it deletes.
+# shellcheck disable=SC2329  # run through with_stop_lock
+clear_old_give_up() {
+  local line="" boot
+
+  [ -e "$STOPPED_FILE" ] || return 0
+  # A record that a full disk cut short has no newline, and keeps holding.
+  { read -r line <"$STOPPED_FILE"; } 2>/dev/null || return 1
+  boot="${line#* }"
+  [ "$boot" != "$line" ] && [ "$boot" != "$(current_boot)" ] && rm -f "$STOPPED_FILE"
+}
+
+# The hook and cron entry point. It starts the supervisor unless autostart is off or Tailspace was
+# stopped, where a give-up from an earlier boot no longer counts.
 cmd_autostart() {
-  [ -d "$STATE_DIR" ] && [ ! -e "$STOPPED_FILE" ] || return 0
+  [ -d "$STATE_DIR" ] || return 0
   load_settings
   [ "$AUTOSTART" = 1 ] || return 0
+  if [ -e "$STOPPED_FILE" ]; then with_stop_lock clear_old_give_up || return 0; fi
   launch_supervisor
 }
 
@@ -1260,11 +1428,20 @@ preflight() {
 # The prefix must be Tailspace's own, because uninstall deletes what is in it, and private,
 # because it holds programs that run as you.
 prepare_directories() {
-  if [ -n "$(ls -A "$PREFIX" 2>/dev/null)" ] && ! owned_prefix "$PREFIX"; then
-    die "$PREFIX already holds other files. Set TAILSPACE_PREFIX to a new or empty directory."
+  local fresh=1
+
+  if [ -n "$(ls -A "$PREFIX" 2>/dev/null)" ]; then
+    owned_prefix "$PREFIX" || die "$PREFIX already holds other files. Set TAILSPACE_PREFIX to a new or empty directory."
+    fresh=0
   fi
-  { mkdir -p "$STATE_DIR" && chmod 700 "$PREFIX" "$STATE_DIR"; } || die "Cannot create $STATE_DIR"
-  [ -f "$CONFIG_FILE" ] || save_settings || die "Cannot write $CONFIG_FILE"
+  if ! { mkdir -p "$STATE_DIR" && chmod 700 "$PREFIX" "$STATE_DIR"; } || { [ ! -f "$CONFIG_FILE" ] && ! save_settings; }; then
+    # A first install that fails here takes back what it created, so that a retry starts over.
+    if [ "$fresh" = 1 ]; then
+      rm -rf "$PREFIX/state" "$CONFIG_FILE.tmp"
+      rmdir "$PREFIX" 2>/dev/null
+    fi
+    die "Cannot write to $PREFIX"
+  fi
   lock_free "$STATE_LOCK" || [ -n "$(lock_holders)" ] ||
     die "File locks don't work under $PREFIX. Set TAILSPACE_PREFIX to a short path on a local disk."
 }
@@ -1414,8 +1591,7 @@ enroll() {
   fi
 
   # Leave nothing running in the background after a failed sign-in.
-  printf 'enroll-failed\n' >"$STOPPED_FILE"
-  stop_everything
+  with_stop_lock stop_now enroll-failed
   die "Could not add this server to your tailnet (see above). The usual causes are an expired, revoked or used-up auth key, or a tag your policy doesn't define. Fix that and run '$NAME install' again."
 }
 
@@ -1491,6 +1667,9 @@ cmd_install() {
     say "Waiting for another install or update to finish ..."
     flock -w 300 8 || die "Another install or update is still running."
   fi
+  lock_current || die "Tailspace was uninstalled while this waited. Run the install again."
+  # An uninstall may have run while this waited.
+  { mkdir -p "$STATE_DIR" && chmod 700 "$PREFIX" "$STATE_DIR"; } || die "Cannot create $STATE_DIR"
   save_settings || die "Cannot write $CONFIG_FILE"
   save_proxy
   check_network
@@ -1499,7 +1678,7 @@ cmd_install() {
   if install_tailscale; then stale=1; fi
   install_links || warn "Could not create the links in $LINK_DIR"
   install_hooks
-  rm -f "$STOPPED_FILE"
+  with_stop_lock rm -f "$STOPPED_FILE" || exit 1
 
   if [ -z "$(supervisor_pids)" ]; then
     launch_supervisor
@@ -1511,10 +1690,9 @@ cmd_install() {
   ts set --auto-update=false >/dev/null 2>&1 || warn "Could not turn off Tailscale's built-in auto-update."
   publish_openssh
 
-  # The running supervisor started from the old program or binaries; switch it over last,
-  # because it briefly disconnects sessions that came in over Tailscale.
+  # The running supervisor started from the old program or binaries; switch it over last, because it
+  # briefly disconnects sessions that came in over Tailscale, and still holding the install lock.
   if [ "$stale" = 1 ]; then
-    exec 8>&-
     cmd_restart >/dev/null
   else
     wait_until settled || fail_to_start "Tailscale did not come online"
@@ -1549,13 +1727,19 @@ cmd_set() {
 
 # ---------------------------------------------------------------- status, logs, updates of Tailspace, uninstall
 
+# Why Tailspace stopped, from the first word of the stopped file, and what to do about it.
 stopped_hint() {
-  case "$1" in
+  local reason=""
+
+  # A record without its newline is one a full disk cut short.
+  { read -r reason _ <"$STOPPED_FILE"; } 2>/dev/null || reason=""
+  case "$reason" in
     user) echo "stopped with '$NAME stop'. Run '$NAME start' to start it again." ;;
     needs-login) echo "this server must log in again. Run '$NAME install' to log it in." ;;
     failing) echo "Tailscale failed $FAILURE_LIMIT times in a row. Read '$NAME logs', then run '$NAME start'." ;;
     enroll-failed) echo "adding this server to your tailnet failed. Run '$NAME install' with a valid auth key." ;;
-    *) echo "$1" ;;
+    "") echo "no reason was saved, which happens when the disk is full. Run '$NAME start' to start it again." ;;
+    *) echo "$reason" ;;
   esac
 }
 
@@ -1574,7 +1758,7 @@ status_summary() {
   path=$(current_path)
 
   if [ -e "$STOPPED_FILE" ]; then
-    state="stopped: $(stopped_hint "$(cat "$STOPPED_FILE")")"
+    state="stopped: $(stopped_hint)"
   elif [ -n "$supervisors" ]; then
     state="running (supervisor $supervisors, tailscaled ${daemons:-starting})"
   else
@@ -1627,49 +1811,99 @@ cmd_version() {
 
 # Fetches the latest Tailspace and reinstalls with it; saved settings carry over.
 cmd_self_update() {
-  local tmp
+  local tmp latest installed
 
   require_installed
   tmp=$(mktemp "${TMPDIR:-/tmp}/$NAME.XXXXXX") || die "Cannot create a temporary file."
   TMP_PATHS+=("$tmp")
   download_any "$SOURCE_URL" "$tmp" || die "Cannot download Tailspace from $SOURCE_URL"
-  bash -n "$tmp" || die "The downloaded Tailspace is damaged."
+  latest=$(sed -n 's/^TAILSPACE_VERSION="\(.*\)"$/\1/p' "$tmp")
+  # A whole copy declares its version and ends with the entry point; an empty or cut-off one doesn't.
+  # shellcheck disable=SC2016  # the literal last line
+  { [ -n "$latest" ] && [ "$(tail -n 1 "$tmp")" = 'main "$@"; exit' ] && bash -n "$tmp"; } ||
+    die "The downloaded Tailspace is damaged."
   if [ "$(cksum <"$tmp")" = "$(cksum <"$PROGRAM")" ]; then
-    say "Tailspace $TAILSPACE_VERSION is the latest."
+    say "Tailspace $latest is the latest."
     return 0
   fi
+  installed=$(sed -n 's/^TAILSPACE_VERSION="\(.*\)"$/\1/p' "$PROGRAM" 2>/dev/null)
+  say "Updating Tailspace ${installed:-$TAILSPACE_VERSION} to $latest ..."
   TAILSPACE_PREFIX="$PREFIX" bash "$tmp" install
 }
 
+# Keeps the shell hooks and the cron job from starting Tailspace again while uninstall runs.
+stop_for_uninstall() {
+  if [ -d "$STATE_DIR" ]; then with_stop_lock mark_stopped user || exit 1; fi
+  if cron_present; then cron_set remove || die "Could not remove the cron job; check 'crontab -l', then run '$NAME uninstall' again."; fi
+}
+
+# Moves this host's state out of autostart's way, then deletes it with any copy that an open file on
+# NFS kept before. The new name stays in state/, so it's a rename and never a copy, and starts with
+# a dot, which main allows no host name.
+remove_state() {
+  local dir
+
+  if [ -d "$STATE_DIR" ]; then mv -T "$STATE_DIR" "$PREFIX/state/.removed.$$" || return 1; fi
+  for dir in "$PREFIX"/state/.removed.*; do
+    if [ -e "$dir" ]; then rm -rf "$dir" && [ ! -e "$dir" ] || return 1; fi
+  done
+}
+
 cmd_uninstall() {
-  local rc
+  local rc others left
 
   owned_prefix "$PREFIX" || die "No Tailspace installation found at $PREFIX"
   # Logging out ends a session that came in over Tailscale; finish anyway.
   trap '' HUP
-  # Keeps the shell hooks from starting Tailspace again halfway through.
-  if [ -d "$STATE_DIR" ]; then printf 'user\n' >"$STOPPED_FILE"; fi
-  if cron_present; then cron_set remove || true; fi
+  # An install or a daily update would write into the prefix again, so wait for it first: an update
+  # then finishes restarting Tailscale, and uninstall can still log the server out.
+  exec 8>>"$PREFIX_LOCK"
+  if ! flock -n 8; then
+    say "Waiting for an install or update to finish ..."
+    flock -w 300 8 || die "An install or update is still running. Run '$NAME uninstall' again in a few minutes."
+  fi
+  lock_current || die "Another uninstall ran meanwhile."
+  stop_for_uninstall
+  if command -v crontab >/dev/null && ! crontab -l >/dev/null 2>&1 && ! crontab -l 2>&1 | grep -q 'no crontab'; then
+    warn "Cannot read your crontab. If it holds Tailspace's jobs, an administrator has to remove them."
+  fi
   if api_answers; then
     if ts logout >/dev/null 2>&1; then say "Logged this server out of your tailnet."; else warn "Could not log this server out; remove it on the Machines page of the admin console."; fi
   else
     warn "Tailscale isn't running, so it can't log this server out. Remove the server on the Machines page of the admin console."
   fi
-  stop_everything || warn "Some processes did not stop."
-  rm -rf "$STATE_DIR"
+  stop_everything || die "Some processes did not stop; see '$NAME status', then run '$NAME uninstall' again."
+  remove_state || die "Could not delete this server's state in $PREFIX/state, perhaps because a file in it is open. Run '$NAME uninstall' again."
 
-  if [ -n "$(find "$PREFIX/state" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
+  others=$(find "$PREFIX/state" -mindepth 1 -maxdepth 1 ! -name '.*' 2>/dev/null) || die "Cannot list $PREFIX/state. Run '$NAME uninstall' again."
+  if [ -n "$others" ]; then
     say "Other servers still use $PREFIX, so its programs and the shell check stay."
+    exec 8>&-
     return 0
   fi
-  for rc in "${RC_FILES[@]}"; do rewrite_hook "$rc" remove; done
-  for rc in "$LINK_DIR/$NAME" "$LINK_DIR/tailscale"; do
-    if [ "$(readlink -f "$rc" 2>/dev/null)" = "$PROGRAM" ]; then rm -f "$rc"; fi
+  rm -rf "$BIN_DIR" "$PREV_BIN_DIR" "$PREFIX"/.download.*
+  # The hooks and links run Tailspace, and config and state/ mark the prefix as its own, so they stay
+  # until everything else is gone and a retry still works.
+  for left in "$BIN_DIR" "$PREV_BIN_DIR" "$PREFIX"/.download.*; do
+    if [ -e "$left" ]; then die "Could not delete $left, perhaps because a file in it is still open. Run '$NAME uninstall' again."; fi
   done
-  rm -rf "$BIN_DIR" "$PREV_BIN_DIR" "$PREFIX/state" "$PREFIX"/.download.*
-  rm -f "$CONFIG_FILE" "$CONFIG_FILE.tmp" "$BAD_VERSION_FILE" "$PREFIX_LOCK" "$PREFIX"/.latest.* "$PREFIX/.$NAME".* "$PROGRAM"
-  rmdir "$PREFIX" 2>/dev/null || say "Kept $PREFIX because it contains other files."
-  say "Uninstalled."
+  for rc in "${RC_FILES[@]}"; do
+    rewrite_hook "$rc" remove || die "Could not remove the shell check from $rc. If its block has no end marker, delete the block by hand. Then run '$NAME uninstall' again."
+  done
+  for rc in "$LINK_DIR/$NAME" "$LINK_DIR/tailscale"; do
+    if [ "$(readlink -f "$rc" 2>/dev/null)" = "$PROGRAM" ]; then rm -f "$rc" || die "Cannot delete $rc. Run '$NAME uninstall' again."; fi
+  done
+  rmdir "$PREFIX/state" || die "$PREFIX/state isn't empty; another server may have installed meanwhile."
+  # Deleted while the lock is held, so an install that waited for it finds its lock file replaced and
+  # stops. On NFS, the open lock file stays as a .nfs file until it's closed.
+  rm -f "$CONFIG_FILE" "$CONFIG_FILE.tmp" "$BAD_VERSION_FILE" "$PREFIX_LOCK" "$PREFIX"/.latest.* "$PREFIX/.$NAME".* ||
+    die "Cannot delete the files in $PREFIX."
+  exec 8>&-
+  cleanup_tmp
+  # bash keeps this script open while it runs, which on NFS turns the deleted program into a .nfs
+  # file that keeps the prefix, so a shell that replaces this one deletes them last.
+  # shellcheck disable=SC2016  # expanded by sh
+  exec sh -c 'if ! rm -f "$1"; then printf "error: Cannot delete %s\n" "$1" >&2; exit 1; fi; rmdir "$2" 2>/dev/null || printf "Kept %s because it contains other files.\n" "$2"; echo Uninstalled.' sh "$PROGRAM" "$PREFIX"
 }
 
 # ---------------------------------------------------------------- entry point
@@ -1698,6 +1932,11 @@ main() {
   SELF=$(readlink -f "${BASH_SOURCE[0]}")
   if [ "${TAILSPACE_DOWNLOADED:-}" = "$SELF" ]; then TMP_PATHS+=("$SELF"); fi
   set_paths "$(choose_prefix)"
+  # The host name names this server's state directory, and dot names in state/ are Tailspace's own,
+  # so a host name must be letters, digits, '.', '-' and '_', and not start with a dot.
+  case "${STATE_DIR#"$PREFIX/state/"}" in "" | .* | *[!A-Za-z0-9._-]*) die "Tailspace needs a host name of letters, digits, '.', '-' and '_' that doesn't start with '.'; this server's is '$(uname -n)'." ;; esac
+  # Workers that run detached resolve the prefix again, so they get this one.
+  export TAILSPACE_PREFIX="$PREFIX"
 
   # Invoked through the `tailscale` link: be the Tailscale CLI for this node, on its current path.
   if [ "${0##*/}" = tailscale ]; then

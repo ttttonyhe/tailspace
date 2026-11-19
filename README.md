@@ -51,6 +51,7 @@ It's light, too:
 tailspace status      # what it's doing, and why
 tailspace stop        # stop it, and keep it stopped across reboots
 tailspace start       # start it again
+tailspace self-update # update Tailspace itself
 tailspace uninstall   # log the server out and remove everything
 ```
 

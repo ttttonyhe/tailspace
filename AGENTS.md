@@ -13,7 +13,8 @@ Tailspace runs Tailscale without root. The product is one bash file, `tailspace`
 | `ADVANCED.md`, `ADVANCED.zh-CN.md` | Everything else: auth keys, settings, proxies, how the server stays connected, reference |
 | `assets/` | Logo, figures, social preview |
 | `examples/policy.hujson` | Tailnet policy that `ADVANCED.md` refers to |
-| `.github/workflows/shellcheck.yml` | CI: `bash -n` on bash 4.2 and current bash, ShellCheck, `./tailspace help` |
+| `tests/` | Tests of the program, from single functions to a full install against Tailscale's servers |
+| `.github/workflows/ci.yml` | CI: ShellCheck, the tests on bash 5 and bash 4.2, and the end-to-end test, also daily |
 
 ## Rules
 
@@ -23,7 +24,7 @@ Path-scoped rules live in `.rules/`. When you read a file that matches a rule's 
 
 | Rule | Paths | Covers |
 | --- | --- | --- |
-| `.rules/program.md` | `tailspace`, `.github/**` | Bash portability, process identity, supervisor protocol, network paths, settings, secrets, verification |
+| `.rules/program.md` | `tailspace`, `tests/**`, `.github/**` | Bash portability, process identity, supervisor protocol, network paths, settings, secrets, verification, tests |
 | `.rules/docs.md` | `README.md`, `README.zh-CN.md`, `ADVANCED.md`, `ADVANCED.zh-CN.md`, `examples/**`, `assets/**` | What goes in which document, voice, numbers and how to measure them, figures, the example policy |
 
 ### Maintaining rules

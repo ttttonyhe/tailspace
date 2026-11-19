@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Servers update Tailscale daily, so the end-to-end test meets each new release within a day too.
+  schedule:
+    - cron: "17 4 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      # Pinned so CI and local runs report the same findings.
+      - name: Install ShellCheck 0.11.0
+        run: |
+          curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz | tar -xJ
+          sudo install shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+
+      - run: shellcheck -s bash -x tailspace tests/*.sh
+      - run: ./tailspace help >/dev/null
+
+  test:
+    name: test (bash ${{ matrix.bash }})
+    if: github.event_name != 'schedule'
+    # Pinned, because bash 4.2 is built with this image's compiler.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # CentOS 7 ships bash 4.2, the oldest bash Tailspace supports.
+        bash: ["5", "4.2"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build bash 4.2
+        if: matrix.bash == '4.2'
+        run: |
+          curl -fsSL --retry 3 https://ftpmirror.gnu.org/bash/bash-4.2.tar.gz | tar -xz
+          cd bash-4.2
+          ./configure --without-bash-malloc --disable-nls CFLAGS="-O2 -std=gnu89" >/dev/null
+          # Serial: the bash 4.2 Makefile builds builtins/ from two targets at once under -j.
+          make >/dev/null
+          echo "TEST_BASH=$PWD/bash" >>"$GITHUB_ENV"
+
+      - run: ${TEST_BASH:-bash} -n tailspace
+      - run: ${TEST_BASH:-bash} tests/functions.sh
+      - run: ${TEST_BASH:-bash} tests/watcher.sh
+      - run: ${TEST_BASH:-bash} tests/supervisor.sh
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - run: bash tests/e2e.sh

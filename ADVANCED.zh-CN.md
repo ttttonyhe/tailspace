@@ -68,7 +68,7 @@ Tailscale 只在启动时读取代理设置，所以没法自己切换路径。�
 
 ### Tailspace 何时会放弃
 
-有些问题需要人来处理，一直重试只会浪费资源。当服务器需要重新登录、加入 tailnet 失败，或者 Tailscale 连续失败 5 次时，Tailspace 会停止 Tailscale 和监管进程。之后它会一直保持停止，服务器重启也不例外，直到你重新启动它。`tailspace status` 会告诉你原因：
+有些问题需要人来处理，一直重试只会浪费资源。当服务器需要重新登录、加入 tailnet 失败，或者 Tailscale 连续失败 5 次时，Tailspace 会停止 Tailscale 和监管进程，`tailspace status` 会告诉你原因：
 
 | status 显示 | 发生了什么 | 怎么办 |
 | --- | --- | --- |
@@ -76,6 +76,11 @@ Tailscale 只在启动时读取代理设置，所以没法自己切换路径。�
 | this server must log in again | 它的密钥过期了，或者有人把它从你的 tailnet 里删除了 | 再运行一次 `tailspace install` |
 | adding this server to your tailnet failed | auth key 已过期或已用完，或者策略里没有定义它的标签 | 用有效的 auth key 运行 `tailspace install` |
 | Tailscale failed 5 times in a row | Tailscale 连续 5 次崩溃、没有回应，或在网络正常时一直离线 | 先看 `tailspace logs`，再运行 `tailspace start` |
+| no reason was saved | Tailspace 停下时磁盘已满，没能写下原因。和 `tailspace stop` 一样，服务器重启后它也保持停止 | 腾出一些空间，再运行 `tailspace start` |
+
+之后 Tailspace 会保持停止，直到你重新启动它，只有一种情况例外。如果它是因为服务器需要重新登录或 Tailscale 一再失败而停下的，那么服务器重启后，shell 检查和 cron 任务会让它再次运行，因为重启服务器可能已经消除了原因。在名字和家目录都不变的 Kubernetes Pod 上，重启 Pod 也算作重启服务器。
+
+服务器的密钥过期，而你又没有别的途径进入它时，也可以靠这一点让它回来。在管理后台的 Machines 页面，为这台服务器选择 Temporarily extend key，并在延期的 30 分钟内为它关闭密钥过期。如果后台显示的是 Reauthorize machine，说明服务器已经发起了新的登录，参见 Tailscale 的[密钥过期](https://tailscale.com/kb/1028/key-expiry)页面。然后重启服务器，或者等服务器下次重启。如果你之前看到 `tailspace status` 的 Autostart 一行列出了 crontab，服务器上的 cron 守护进程会让它自己重新上线；否则要等有人登录。
 
 ## 命令
 

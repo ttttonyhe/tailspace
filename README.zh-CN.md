@@ -7,7 +7,7 @@
 
 **非 Root 身份运行 Tailscale**
 
-在 Linux 上安装 [Tailscale](https://tailscale.com) 需要 root 权限，而在实验室的共享服务器、HPC 登录节点或 Kubernetes Pod 上，你通常没有。Tailspace 用你的普通账号运行 Tailscale，并让它一直运行，你随时都能从自己的设备 SSH 到服务器。
+在远程服务器上安装 [Tailscale](https://tailscale.com) 需要 root（管理员）权限，而在 HPC 登录节点、Kubernetes Pod 这类共享服务器上，你通常没有。Tailspace 以 [userspace 模式](https://tailscale.com/docs/concepts/userspace-networking)运行并维持 Tailscale 连接，不需要 root 权限，让你在任何地方都能从自己的任何设备 SSH 到任何服务器。
 
 [English](README.md) · 简体中文
 
@@ -51,6 +51,7 @@ Tailscale 的设备密钥默认 180 天后过期。想让服务器一直保持�
 tailspace status      # 在做什么，为什么
 tailspace stop        # 停止，服务器重启后也保持停止
 tailspace start       # 重新启动
+tailspace self-update # 更新 Tailspace 自身
 tailspace uninstall   # 让服务器登出，并删除一切
 ```
 

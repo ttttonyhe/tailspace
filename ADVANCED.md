@@ -68,7 +68,7 @@ Once a day, the supervisor checks for a new version of Tailscale. If there is on
 
 ### When Tailspace gives up
 
-Some problems need a person, and retrying would only waste resources. When the server has to log in again, when adding it to your tailnet fails, or when Tailscale fails 5 times in a row, Tailspace stops Tailscale and the supervisor. It stays stopped, even across reboots, until you start it again, and `tailspace status` tells you why:
+Some problems need a person, and retrying would only waste resources. When the server has to log in again, when adding it to your tailnet fails, or when Tailscale fails 5 times in a row, Tailspace stops Tailscale and the supervisor, and `tailspace status` tells you why:
 
 | Status says | What happened | What to do |
 | --- | --- | --- |
@@ -76,6 +76,11 @@ Some problems need a person, and retrying would only waste resources. When the s
 | this server must log in again | Its key expired, or someone removed it from your tailnet | Run `tailspace install` again |
 | adding this server to your tailnet failed | The auth key was expired or used up, or your policy doesn't define its tag | Run `tailspace install` with a valid auth key |
 | Tailscale failed 5 times in a row | Tailscale crashed, hung, or stayed offline while the network worked, 5 times in a row | Check `tailspace logs`, then run `tailspace start` |
+| no reason was saved | The disk was full when Tailspace stopped, so it couldn't write down why. Like a stop, this holds across reboots | Free some space, then run `tailspace start` |
+
+Tailspace then stays stopped until you start it again, with one exception. If it stopped because the server had to log in again or Tailscale kept failing, the shell check and the cron job start it again after the server reboots, because a reboot can clear the cause. On a Kubernetes pod that keeps its name and its home directory, restarting the pod counts as a reboot.
+
+That also gives you a way back to a server whose key expired when you have no other way to reach it. On the Machines page of the admin console, choose Temporarily extend key for the server, and within the 30 minutes the extension lasts, disable key expiry for it. If the console offers Reauthorize machine instead, the server has already started a new login; see Tailscale's [key expiry](https://tailscale.com/kb/1028/key-expiry) page. Then reboot the server, or wait for its next reboot. If `tailspace status` listed crontab under Autostart when you last checked, the server's cron daemon brings it back online on its own; otherwise it comes back when someone logs in.
 
 ## Commands
 
