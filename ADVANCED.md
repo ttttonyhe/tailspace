@@ -1,6 +1,6 @@
 # Tailspace in depth
 
-The [README](README.md) covers the usual install. This page covers everything else: auth keys, SSH, how Tailspace keeps your server online, commands and settings, proxies, and reference details.
+The [README](README.md) covers the usual install. This page covers everything else: auth keys, SSH, how Tailspace keeps your server online, commands and settings, proxies and relays, reaching your other devices from the server, and reference details.
 
 English · [简体中文](ADVANCED.zh-CN.md)
 
@@ -20,11 +20,13 @@ Passing the key in `TS_AUTHKEY` keeps it off the process list, where other users
 
 ## SSH
 
-Tailspace turns on Tailscale SSH, so you log in with your Tailscale identity instead of SSH keys. Tailscale SSH takes port 22. If the server also runs OpenSSH, Tailspace makes it available on port 2222, so `ssh -p 2222 you@lab-07` still works with your usual keys and config.
+Tailspace turns on Tailscale SSH, so you log in with your Tailscale identity instead of SSH keys. Tailscale SSH takes port 22. If the server also runs OpenSSH, Tailspace makes it available on port 2222, unless a program of yours already takes 127.0.0.1:2222, so `ssh -p 2222 you@lab-07` still works with your usual keys and config. OpenSSH sees each of those connections coming from the server itself, though, so its logs, `from=` limits in `authorized_keys` and tools that ban addresses can't tell your devices apart. Tailscale SSH knows who connected.
 
 Tailscale's default policy runs Tailscale SSH in check mode, which asks you to log in again in the browser every 12 hours. To skip that, change `"check"` to `"accept"` in the policy's `ssh` rule.
 
 Every other port goes straight to the server. A Jupyter notebook listening on port 8888, for example, is at `lab-07:8888`.
+
+Restarting Tailscale ends every session over Tailscale: your SSH sessions, connections to programs on the server such as that notebook, and connections the server opens to your other devices. Tailspace puts off the restarts that can wait, such as updates, while it sees sessions open, for 3 days at most, as [Updates](#updates) explains. Still, run long jobs in tmux or screen, so a dropped connection never costs you work.
 
 ## How Tailspace keeps the server online
 
@@ -49,7 +51,7 @@ Tailscale reads its proxy setting only when it starts, so it can't switch paths 
   <img src="assets/paths-light.svg" alt="A timeline with two lanes, the direct path and the proxy path. The server starts on the direct path. When the direct path fails, the supervisor waits about 4 minutes for Tailscale to recover, then switches to the proxy path. Later the proxy path fails. The direct path works again by then, so after a wait of about a minute the supervisor switches back to the direct path.">
 </picture>
 
-Before switching, the supervisor gives Tailscale a chance to recover on its own, 4 minutes on the direct path and 1 minute on the proxy path. If both paths are down, it checks every minute and uses whichever comes back first. It prefers the direct path, since on the proxy path your server is only as reliable as the proxy. After switching to the proxy path, it switches back once the direct path has been working steadily again, at the earliest 20 minutes later.
+Before switching, the supervisor gives Tailscale a chance to recover on its own, 4 minutes on the direct path and 1 minute on the proxy path. If both paths are down, it checks every minute and uses whichever comes back first. It prefers the direct path, since on the proxy path your server is only as reliable as the proxy. After switching to the proxy path, it switches back once the direct path has been working steadily again, at the earliest 20 minutes later. Because switching restarts Tailscale, it also waits until no session over Tailscale is open, for 3 days in all. Leaving a path that stopped working doesn't wait for anyone to disconnect.
 
 <details>
 <summary>The exact rules</summary>
@@ -58,13 +60,15 @@ Before switching, the supervisor gives Tailscale a chance to recover on its own,
 - When Tailscale goes offline, the supervisor waits 4 minutes on the direct path, which covers Tailscale's own reconnection attempts, or 1 minute on the proxy path.
 - It then tests the path in use by opening a fresh connection to the coordination server with `tailscale debug ts2021`. If that fails, it tests the other path and switches if that one works. If the path in use passes two tests in a row while Tailscale stays offline, Tailscale is stuck, and the supervisor restarts it on the same path. If neither path works, it tests again every minute.
 - After any other restart, including a restart of Tailspace itself, the supervisor stays on the path it was using as long as that path works.
-- After switching to the proxy path, the supervisor waits 15 minutes, then tests the direct path every 5 minutes and switches back after two good tests in a row. If the direct path fails again within 30 minutes of switching back, that 15-minute wait doubles, up to 4 hours.
+- After switching to the proxy path, the supervisor waits 15 minutes, then tests the direct path every 5 minutes. It switches back as soon as two tests in a row pass while Tailscale is online, and either no session over Tailscale is open or sessions have held it back for 3 days in all. If the direct path fails again within 30 minutes of switching back, that 15-minute wait doubles, up to 4 hours.
 
 </details>
 
 ### Updates
 
 Once a day, the supervisor checks for a new version of Tailscale. If there is one, it installs it, restarts Tailscale, and waits for Tailscale to come back online within 2 minutes and stay up for 30 seconds. If it doesn't, Tailspace rolls back to the previous version and won't install that version automatically again. If the supervisor can't tell, for example because the network is down or you stopped Tailspace, it rolls back and tries the new version again a day later.
+
+While a session over Tailscale is open, the supervisor holds a new version back, because installing it restarts Tailscale. It sees SSH sessions, connections that Tailscale hands to programs on 127.0.0.1 or ::1, and `tailscale` commands that stay connected to Tailscale, such as `tailscale nc` or `tailscale serve` in the foreground. It doesn't see a serve forward to a Unix socket or to another address, and it sees a Tailscale SSH session that runs no shell, such as `ssh -N -L 8888:localhost:8888 you@lab-07`, only while that session forwards a connection to 127.0.0.1 or ::1. The supervisor checks again every hour, and after 3 days it updates anyway, so a server that's never idle still gets fixes. `tailspace status` shows when an update is waiting, and `tailspace update` installs it right away.
 
 ### When Tailspace gives up
 
@@ -135,20 +139,31 @@ The first install saves that proxy for the proxy path. Tailscale still starts on
 
 Only `http://` proxies work. Tailscale treats every proxy as an HTTP proxy, even one written as `socks5://`, and it ignores `ALL_PROXY`.
 
-When two devices can't connect directly, their traffic goes through a DERP relay, which may be far away. That's common for servers behind a proxy. Two Tailscale features can bring a relay closer:
+## Direct connections and relays
+
+Tailscale connects your devices to the server directly whenever it can. When it can't, usually because the server sits behind a hard NAT or firewall, or reaches the internet only through a proxy, the traffic goes through a peer relay, if you've set up one that both devices can reach, or else through one of Tailscale's DERP relays. DERP relays are slower, because Tailscale limits their bandwidth and they may be far away. `tailspace status` tells you when a device that's active right now reaches the server through a DERP relay, and its device list shows `relay` next to that device.
+
+Two Tailscale features can bring a relay closer:
 
 - [Your own DERP server](https://tailscale.com/kb/1118/custom-derp-servers), run near the server, helps on both paths. It doesn't need a domain name, because `derper --certmode manual --hostname IP` makes its own certificate and prints the lines to add to your policy. Start it with `--verify-clients` so only your tailnet can use it, which requires Tailscale on the same machine.
-- [Peer relays](https://tailscale.com/docs/features/peer-relay), in Tailscale 1.86 and newer, let one of your own devices relay for the others. They use UDP, which proxies don't carry, so they only help on the direct path.
+- [Peer relays](https://tailscale.com/docs/features/peer-relay), in Tailscale 1.86 and newer, let one of your own devices relay for the others. They use UDP, which HTTP proxies don't carry, so they help only when the server can send UDP out directly.
+
+Userspace networking, which lets Tailscale run without root, is rarely what slows you down. On a Kubernetes pod running Tailscale 1.104.7, it moved about 10 Gbit/s over one connection to the pod's own tailnet address, a test that leaves out WireGuard and the network.
 
 ## Connecting from the server to other devices
 
-A normal Tailscale install adds a virtual network interface, which any program can use to reach your other devices. Without root there's no such interface, so programs on the server have to go through `tailscale nc`:
+A normal Tailscale install adds a virtual network interface, which any program can use to reach your other devices. Without root there's no such interface, so programs on the server have to go through `tailscale nc`. For SSH, add a device to `~/.ssh/config` once:
 
-```bash
-ssh -p 2222 -o ProxyCommand='tailscale nc %h %p' you@lab-01
+```text
+Host lab-01
+  User you
+  Port 2222
+  ProxyCommand tailscale nc %h %p
 ```
 
-If the server is tagged, the example policy blocks this, because it keeps tagged servers from connecting to your other devices. To let your servers reach each other, uncomment the line in the policy that allows `tag:server` to reach `tag:server`.
+Then `ssh lab-01` logs in with your usual keys to the OpenSSH that another Tailspace server makes available on port 2222, and `scp`, `rsync` and `git` reach it by name too. Programs that can't go through `tailscale nc`, such as curl or a browser, can't reach your tailnet. MagicDNS names like lab-01 resolve only inside Tailscale, and `ping` doesn't reach your devices, though `tailscale ping lab-01` does. Tailscale also has SOCKS5 and HTTP proxies for such programs, but Tailspace leaves them off. They have no password, so on a shared server every other user could use them to reach your devices.
+
+If the server is tagged, the example policy blocks connections like these, because it keeps tagged servers from connecting to your other devices. To let your servers reach each other, uncomment the line in the policy that allows `tag:server` to reach `tag:server`.
 
 ## Reference
 
@@ -182,6 +197,7 @@ Start with `tailspace status`, and check `tailspace logs` for details.
 - **The install can't reach controlplane.tailscale.com.** The server needs a proxy. See [Servers behind a proxy](#servers-behind-a-proxy).
 - **Tailscale SSH refuses you.** Make sure your policy has an `ssh` rule that allows you, like the one in the example policy, and connect as the account that installed Tailspace.
 - **Nothing is running after a reboot.** The server has no cron, and nobody has logged in since the reboot. Log in once the way you did before Tailspace.
+- **Transfers are slow, or typing lags.** Your device may reach the server through a DERP relay, which `tailspace status` points out. See [Direct connections and relays](#direct-connections-and-relays).
 - **The install says the downloaded tailscaled doesn't run.** Your home directory doesn't allow running programs. Install somewhere else with `TAILSPACE_PREFIX`.
 - **The install says file locks don't work, or a path is too long.** Install to a short path on a local disk with `TAILSPACE_PREFIX`.
 
@@ -189,13 +205,14 @@ Start with `tailspace status`, and check `tailspace logs` for details.
 
 - Linux 3.2 or newer, including CentOS 7, on x86_64, arm64, 32-bit ARM, 386 or riscv64
 - bash 4.2 or newer, and curl or wget
-- `flock`, `setsid` and `timeout`, which almost every distribution includes
+- `awk`, `flock`, `setsid` and `timeout`, which almost every distribution includes
 - A normal account on the server
 
 ### Security
 
-- Tailscale runs as you, so it can do whatever your account can do and nothing more. Only you can read `~/.tailspace`.
-- Tailscale forwards every connection to the server's tailnet IP to the same port on the server. So any program listening on the server, yours or another user's, is reachable from the devices your policy allows. To limit that, allow only the ports you need in your policy, such as `tcp:22` and `tcp:2222`.
+- If the server belongs to a shared cluster, check its rules first. Tailspace keeps Tailscale running in the background, and Tailscale SSH skips the cluster's own two-factor check. Some clusters forbid one or both.
+- Tailscale runs as you, so it can do whatever your account can do and nothing more. Only you can get into `~/.tailspace`, which holds the socket that controls Tailscale. Tailspace also leaves Tailscale's proxies off, so other users on the server can't use your tailnet.
+- Tailscale hands every connection to the server's tailnet IP to the same port on 127.0.0.1, unless something takes the port first: Tailscale SSH takes 22 while it's on, Tailspace's forward to OpenSSH takes 2222, and a `tailscale serve` forward takes the port you give it. So any program listening on 127.0.0.1 or on all addresses, yours or another user's, is reachable from the devices your policy allows, even one that listens only on 127.0.0.1 because it trusts everyone who can reach that address.
 - Tailscale SSH only logs people in as your account, and your policy decides who can connect. The example policy lets everyone in your tailnet in, so if you share your tailnet, replace `autogroup:member` in its `ssh` rule with your own login name.
 - New Tailscale versions come from `pkgs.tailscale.com` over HTTPS, and HTTPS is the only check of where they come from. A new version only stays if it runs and comes back online, as [Updates](#updates) describes. Tailspace never updates itself on its own; `tailspace self-update` downloads the latest Tailspace from this repository's `main` branch and runs it.
 

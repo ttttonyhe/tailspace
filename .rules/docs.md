@@ -32,6 +32,7 @@ Every number says where it was measured. The current ones come from a Kubernetes
 | Share of one core at idle | Over 300 s, the change in fields 14 to 17 of `/proc/PID/stat`, which are utime, stime, cutime and cstime, for tailscaled, the supervisor and the supervisor's children, divided by `getconf CLK_TCK` and by the window |
 | Memory at idle | Sum of the `Pss:` lines in `/proc/PID/smaps` for the same processes, with no session open |
 | Threads and CPU per probe | `Threads:` in `/proc/PID/status`, and bash `time` over 10 runs of `tailscale status --json --peers=false`, with and without `GOMAXPROCS=8` |
+| Userspace networking throughput | Median of 3 runs sending 1 GiB through `tailscale nc` to the node's own tailnet IPv4 address, into a listener on 127.0.0.1 that discards it. It leaves out WireGuard and UDP, which the documents' wording reflects |
 
 ## Figures
 

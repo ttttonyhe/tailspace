@@ -18,6 +18,8 @@ English · [简体中文](README.zh-CN.md)
 
 ## Install
 
+If the server belongs to a shared cluster, check its rules first. Tailspace keeps Tailscale running in the background, and Tailscale SSH skips the cluster's own two-factor check. Some clusters forbid one or both.
+
 On the server, run:
 
 ```bash
@@ -35,7 +37,8 @@ Without root, Tailscale can't run as a system service, so Tailspace looks after 
 - Restarts Tailscale if it crashes.
 - Starts Tailscale again after the server reboots, right away if the server has cron, or else the next time you log in.
 - Switches between a direct connection and your HTTP proxy, if the server has one, whenever either goes down.
-- Updates Tailscale daily, and rolls back if a new version doesn't work.
+- Updates Tailscale daily, waiting up to 3 days for your sessions to end, and rolls back if a new version doesn't work.
+- Keeps other users on a shared server off your tailnet.
 - Stops and tells you why when it needs your help, instead of retrying forever.
 
 It's light, too:
@@ -55,6 +58,6 @@ tailspace self-update # update Tailspace itself
 tailspace uninstall   # log the server out and remove everything
 ```
 
-See [ADVANCED.md](ADVANCED.md) for auth keys, proxies, settings, and how it all works.
+See [ADVANCED.md](ADVANCED.md) for auth keys, proxies, settings, what works differently without root, and how it all works.
 
 Tailspace is a single bash script under the [MIT license](LICENSE), and isn't affiliated with Tailscale Inc.

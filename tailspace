@@ -13,7 +13,7 @@
 
 set -u
 
-TAILSPACE_VERSION="1.1.0"
+TAILSPACE_VERSION="1.2.0"
 NAME="tailspace"
 SOURCE_URL="${TAILSPACE_SOURCE_URL:-https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace}"
 DEFAULT_PREFIX="$HOME/.tailspace"
@@ -58,6 +58,9 @@ UPDATE_HEALTH_TIMEOUT=120
 # A rollback goes back to a version known to work, so it gets plenty of time.
 ROLLBACK_HEALTH_TIMEOUT=300
 UPDATE_SOAK=30
+# Restarting tailscaled cuts every connection over Tailscale, so the restarts that can wait, a daily
+# update and a move back to the direct path, wait while any is open, for three days at most.
+SESSION_WAIT_MINUTES=4320
 
 READY_TIMEOUT=90
 ENROLL_TIMEOUT=900
@@ -67,6 +70,7 @@ DAEMON_PID=""
 WATCHER_PID=""
 UPDATER_PID=""
 FETCHED_DIR=""
+PREV_STAGED=""
 DOWNLOAD_PATH=""
 TMP_PATHS=()
 
@@ -155,6 +159,10 @@ cleanup_tmp() {
 # A directory is Tailspace's own once install has created its config file and state directory.
 owned_prefix() { [ -f "$1/config" ] && [ -d "$1/state" ]; }
 
+# Sets FILE's time to SECONDS ago. touch -t takes the stamp bash's printf makes, also in BusyBox,
+# whose touch -d takes no relative dates. Both read it in UTC, which no daylight saving shifts.
+backdate() { (export TZ=UTC0 && touch -t "$(printf '%(%Y%m%d%H%M.%S)T' "$(($(date +%s) - $2))")" "$1"); }
+
 # The prefix is resolved once, so every run spells it the same way: the shell markers, cron lines
 # and process checks all compare it as text. A copy downloaded to a temporary directory never
 # takes that directory for its prefix.
@@ -191,6 +199,7 @@ set_paths() {
   ONLINE_FILE="$STATE_DIR/online"
   REASON_FILE="$STATE_DIR/restart-reason"
   UPDATE_STAMP="$STATE_DIR/update-checked"
+  UPDATE_WAIT_FILE="$STATE_DIR/update-waiting"
   PID_FILE="$STATE_DIR/supervisor.pid"
 
   HOOK_BEGIN="# >>> $NAME ($PREFIX) >>>"
@@ -269,6 +278,78 @@ shown_proxy() {
   url=$(proxy_url)
   case "$url" in *@*) url="http://***@${url##*@}" ;; esac
   printf '%s' "$url"
+}
+
+# The HTTPS proxy that tailscaled PID runs with, from its environment, where with_path puts it only
+# on the proxy path. A proxy saved since then doesn't count until tailscaled restarts.
+daemon_proxy() {
+  local var
+
+  while IFS= read -r -d '' var; do
+    case "$var" in https_proxy=*)
+      printf '%s' "${var#https_proxy=}"
+      return
+      ;;
+    esac
+  done 2>/dev/null <"/proc/$1/environ"
+}
+
+# Where tailscaled reaches the proxy at URL if it listens on this server's loopback, written as
+# /proc/net/tcp writes a remote address. Its connections there look like the connections it
+# forwards. An http:// URL without a port means 80.
+proxy_sockets() {
+  local host port=80 addresses address octets hi lo
+
+  [ -n "$1" ] || return 0
+  host="${1#*://}"
+  host="${host%%[/?#]*}"
+  host="${host##*@}"
+  case "$host" in *"]:"* | [!"["]*:*)
+    port="${host##*:}"
+    host="${host%:*}"
+    ;;
+  esac
+  # Go treats an empty port, as in http://127.0.0.1:, as the scheme's default.
+  port="${port:-80}"
+  case "$port" in *[!0-9]*) return 0 ;; esac
+  port=$(printf '%04X' "$((10#$port))")
+  host="${host,,}"
+  host="${host#\[}"
+  host="${host%\]}"
+  case "$host" in
+    localhost | localhost.) addresses="127.0.0.1 ::1" ;;
+    *:*) addresses="$host" ;;
+    *[!0-9.]*)
+      # getent ahosts drops ::1 where no other IPv6 address exists, and tailscaled doesn't, so
+      # getent hosts adds its answer. Bounded, because a slow DNS server would stall the watcher.
+      addresses=$({ timeout 2 getent ahosts "$host"; timeout 2 getent hosts "$host"; } 2>/dev/null | awk '{ print $1 }' | sort -u)
+      ;;
+    *) addresses="$host" ;;
+  esac
+  for address in $addresses; do
+    address="${address,,}"
+    # Loopback in canonical form: ::1 however it's written, and IPv4-mapped addresses as the IPv4
+    # address that Go dials instead.
+    if [[ $address =~ ^[0:]*:0*1$ ]]; then
+      address="::1"
+    elif [[ $address =~ ^[0:]*:ffff:([0-9.]+)$ ]]; then
+      address="${BASH_REMATCH[1]}"
+    elif [[ $address =~ ^[0:]*:ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$ ]]; then
+      hi=$((16#${BASH_REMATCH[1]}))
+      lo=$((16#${BASH_REMATCH[2]}))
+      address="$((hi >> 8)).$((hi & 255)).$((lo >> 8)).$((lo & 255))"
+    fi
+    case "$address" in
+      ::1) echo "00000000000000000000000001000000:$port" ;;
+      127.*)
+        case "$address" in *[!0-9.]*) continue ;; esac
+        # shellcheck disable=SC2206  # digits and dots only, checked above
+        octets=(${address//./ })
+        [ "${#octets[@]}" = 4 ] || continue
+        printf '%02X%02X%02X%02X:%s\n' "$((10#${octets[3]}))" "$((10#${octets[2]}))" "$((10#${octets[1]}))" "$((10#${octets[0]}))" "$port"
+        ;;
+    esac
+  done
 }
 
 current_path() {
@@ -481,13 +562,23 @@ fetch_release() {
   FETCHED_DIR="$tmp/$name"
 }
 
-# The current binaries are copied to bin.prev for rollback, then replaced with atomic renames,
-# so bin always holds runnable binaries.
-install_release() {
+# The current binaries are copied aside for rollback, then they and the new ones move into bin.prev
+# and bin with atomic renames, so bin always holds runnable binaries. Updates take the two steps
+# apart; the copy reaches bin.prev only with the swap, because another server sharing this home may
+# still need what bin.prev holds.
+keep_previous() {
+  PREV_STAGED="${FETCHED_DIR%/*}/prev"
+  mkdir -p "$PREV_STAGED" || return 1
+  if [ -x "$BIN_DIR/tailscaled" ]; then cp -p "$BIN_DIR/tailscale" "$BIN_DIR/tailscaled" "$PREV_STAGED/" || return 1; fi
+}
+
+swap_release() {
   mkdir -p "$BIN_DIR" "$PREV_BIN_DIR" || return 1
-  if [ -x "$BIN_DIR/tailscaled" ]; then cp -p "$BIN_DIR/tailscale" "$BIN_DIR/tailscaled" "$PREV_BIN_DIR/" || return 1; fi
+  if [ -e "$PREV_STAGED/tailscaled" ]; then mv -f "$PREV_STAGED/tailscale" "$PREV_STAGED/tailscaled" "$PREV_BIN_DIR/" || return 1; fi
   mv -f "$FETCHED_DIR/tailscale" "$FETCHED_DIR/tailscaled" "$BIN_DIR/"
 }
+
+install_release() { keep_previous && swap_release; }
 
 # ---------------------------------------------------------------- process identification
 
@@ -548,8 +639,9 @@ supervisor_running() {
     [ "/proc/$pid/fd/9" -ef "$STATE_LOCK" ] && is_supervisor "$pid" "$(proc_field "$pid" 3)" "$comm"
 }
 
-# Processes in session SID.
-session_pids() {
+# Processes whose stat field FIELD is VALUE, counting fields from the state after the name as
+# proc_field does: field 1 is the parent, field 3 the session.
+proc_pids() {
   local dir stat fields
 
   for dir in /proc/[0-9]*; do
@@ -558,9 +650,11 @@ session_pids() {
     { read -r -d '' stat <"$dir/stat"; } 2>/dev/null
     # shellcheck disable=SC2206  # numbers and a one-letter state, as in proc_field
     fields=(${stat##*) })
-    if [ "${#fields[@]}" -gt 3 ] && [ "${fields[3]}" = "$1" ]; then echo "${dir#/proc/}"; fi
+    if [ "${#fields[@]}" -gt "$1" ] && [ "${fields[$1]}" = "$2" ]; then echo "${dir#/proc/}"; fi
   done
 }
+
+session_pids() { proc_pids 3 "$1"; }
 
 # tailscaled's SSH helpers run the same binary as `tailscaled be-child ...` and don't match.
 daemon_pids() {
@@ -576,6 +670,47 @@ daemon_pids() {
     done 2>/dev/null <"$dir/cmdline"
   done
 }
+
+# What restarting tailscaled PID would cut: Tailscale SSH sessions, which are its child processes;
+# the connections it forwards to programs here, which are its TCP connections to 127.0.0.1 or ::1;
+# and `tailscale nc` and other clients connected to its socket. Its own connections to a proxy on
+# loopback don't count. An idle `ssh -N` over Tailscale SSH and a serve forward to a unix socket
+# leave no trace here. `status --json` can't tell either: on a userspace node it reported no
+# traffic at all, even for a peer that had carried an SSH session.
+open_sessions() {
+  local pid="$1" skip children
+
+  case "$pid" in "" | *[!0-9]*)
+    echo 0
+    return
+    ;;
+  esac
+  skip=" $(proxy_sockets "$(daemon_proxy "$pid")" | paste -sd' ' -) "
+  children=$(proc_pids 1 "$pid" | wc -l)
+  # /proc/net/tcp and tcp6 give addresses in hex in the kernel's byte order, so 127.0.0.1 reads
+  # 0100007F and ::1 reads 00000000000000000000000001000000. States 01, 04, 05 and 08 still carry
+  # data: established, and either side of a half-closed connection. ls -n skips looking up names,
+  # which an unresponsive LDAP server could stall. In /proc/net/unix, state 03
+  # is connected, and an accepted socket shows its listener's path; tailscaled may hold other unix
+  # sockets for good, such as a D-Bus connection. The path travels in the environment, because
+  # awk -v would read backslashes in it as escapes. ls fails now and then while descriptors
+  # change, so its status doesn't gate the tables.
+  { ls -ln "/proc/$pid/fd"; echo --; cat /proc/net/tcp /proc/net/tcp6; echo --; cat /proc/net/unix; } 2>/dev/null |
+    TAILSPACE_SOCKET="$SOCKET" awk -v skip="$skip" -v n="$children" '
+      $0 == "--" { table++; next }
+      table == 0 { if ($NF ~ /^socket:\[[0-9]+\]$/) { gsub(/[^0-9]/, "", $NF); own[$NF] = 1 } next }
+      !($(table == 1 ? 10 : 7) in own) { next }
+      table == 1 && $4 ~ /^(01|04|05|08)$/ && !index(skip, " " $3 " ") {
+        split($3, remote, ":")
+        if (remote[1] == "0100007F" || remote[1] == "00000000000000000000000001000000" ||
+          remote[1] == "0000000000000000FFFF00000100007F") n++
+      }
+      table == 2 && $6 == "03" && substr($0, length($0) - length(ENVIRON["TAILSPACE_SOCKET"])) == " " ENVIRON["TAILSPACE_SOCKET"] { n++ }
+      END { print n + 0 }'
+}
+
+# "the session over Tailscale closes", or "the 3 sessions over Tailscale close", for the log.
+sessions_close() { if [ "$1" = 1 ]; then echo "the session over Tailscale closes"; else echo "the $1 sessions over Tailscale close"; fi; }
 
 stop_pid() {
   local pid="$1" deadline=$((SECONDS + $2))
@@ -716,7 +851,7 @@ lock_current() { [ /proc/self/fd/8 -ef "$PREFIX_LOCK" ]; }
 
 watch_daemon() {
   local path="$1" self="$BASHPID" failures=0 status state grace offline_since="" auth_since=""
-  local path_was_working=0 failback_due=$((SECONDS + HOLDDOWN)) failback_streak=0
+  local path_was_working=0 failback_due=$((SECONDS + HOLDDOWN)) failback_streak=0 sessions held=0 held_at=""
 
   # A SIGKILLed supervisor can't clean up, so the watcher exits once its parent changes. Its sleep
   # outlives a killed watcher, so it stays off the log, which on NFS would block uninstall.
@@ -724,6 +859,10 @@ watch_daemon() {
     rotate_log
 
     if ! status=$(status_json); then
+      # Whenever a probe doesn't find the node online, the direct path's good tests lose their run
+      # and a hold for sessions pauses: two tests in a row must both run while online.
+      failback_streak=0
+      held_at=""
       failures=$((failures + 1))
       log "supervise: LocalAPI probe failed ($failures/$PROBE_FAILURES)"
       if [ "$failures" -ge "$PROBE_FAILURES" ]; then restart_for hung "tailscaled is unresponsive"; fi
@@ -735,6 +874,8 @@ watch_daemon() {
     # Signing in again needs a person. Keep waiting while an install may be doing just that.
     if [ -e "$ENROLLED_FILE" ] && { [ "$state" = NeedsLogin ] || [ "$state" = NeedsMachineAuth ]; } && ! prefix_busy; then
       auth_since="${auth_since:-$SECONDS}"
+      failback_streak=0
+      held_at=""
       if [ $((SECONDS - auth_since)) -ge "$AUTH_GRACE" ]; then restart_for needs-login "this server must log in again ($state)"; fi
       continue
     fi
@@ -753,10 +894,30 @@ watch_daemon() {
       if [ "$path" = proxy ] && [ "$SECONDS" -ge "$failback_due" ]; then
         failback_due=$((SECONDS + FAILBACK_CHECK))
         if path_works direct; then failback_streak=$((failback_streak + 1)); else failback_streak=0; fi
-        if [ "$failback_streak" -ge 2 ]; then restart_for failback "the direct path is back"; fi
+        # Going back is an improvement, not a repair, so it waits while sessions are open. Only the
+        # time between two checks that both held it back counts toward the limit: a flaky direct
+        # path neither restarts the count, which could then run forever, nor adds the time when
+        # going back wasn't possible.
+        if [ "$failback_streak" -lt 2 ]; then held_at=""; fi
+        if [ "$failback_streak" -ge 2 ]; then
+          sessions=$(open_sessions "$DAEMON_PID")
+          if [ "$sessions" = 0 ]; then restart_for failback "the direct path is back"; fi
+          if [ -n "$held_at" ]; then
+            held=$((held + SECONDS - held_at))
+          elif [ "$held" = 0 ]; then
+            log "supervise: the direct path is back; switching once $(sessions_close "$sessions"), or after sessions have held it for $((SESSION_WAIT_MINUTES / 1440)) days"
+          fi
+          held_at="$SECONDS"
+          if [ "$held" -ge $((SESSION_WAIT_MINUTES * 60)) ]; then
+            restart_for failback "the direct path is back, and sessions have kept the proxy path for $((SESSION_WAIT_MINUTES / 1440)) days"
+          fi
+        fi
       fi
       continue
     fi
+    # An outage isn't time that sessions held a failback either.
+    failback_streak=0
+    held_at=""
     # Other states, such as NeedsLogin or Stopped, aren't waiting for the network.
     case "$state" in Running | Starting | NoState) ;; *) continue ;; esac
 
@@ -781,13 +942,24 @@ watch_daemon() {
 }
 
 update_loop() {
-  local self="$BASHPID"
+  local self="$BASHPID" due capped=0
 
   # Like the watcher's, the sleep outlives a killed loop and so stays off the log.
   while sleep "$UPDATE_TICK" >/dev/null 2>&1; is_child_of "$self" "$$"; do
-    if [ -z "$(find "$UPDATE_STAMP" -mmin "-$UPDATE_INTERVAL_MINUTES" 2>/dev/null)" ]; then
-      # A session of its own, so that stopping Tailspace never kills an update halfway.
+    due=0
+    if [ -z "$(find "$UPDATE_STAMP" -mmin "-$UPDATE_INTERVAL_MINUTES" 2>/dev/null)" ]; then due=1; fi
+    # Once, right when a wait for sessions runs out, which the hourly look could miss by up to an
+    # hour. If that run fails, the hourly look takes over again.
+    if [ -n "$(find "$UPDATE_WAIT_FILE" ! -mmin "-$SESSION_WAIT_MINUTES" 2>/dev/null)" ]; then
+      if [ "$capped" = 0 ]; then due=1 capped=1; fi
+    else
+      capped=0
+    fi
+    # A session of its own, so that stopping Tailspace never kills an update halfway. A worker that
+    # found the prefix lock busy did nothing, so that run is still owed.
+    if [ "$due" = 1 ]; then
       setsid "$PROGRAM" update-worker --auto >/dev/null 2>&1
+      if [ $? = 3 ]; then capped=0; fi
     fi
   done
 }
@@ -843,6 +1015,9 @@ cmd_supervise() {
   [ -d "$STATE_DIR" ] && [ ! -e "$STOPPED_FILE" ] || exit 0
   printf '%s\n' "$$" >"$PID_FILE"
   for pid in $(daemon_pids); do stop_pid "$pid" "$STOP_GRACE"; done
+  # Starting has just cut every session, so an update that waits for sessions is checked within a
+  # tick, before people reconnect. The wait keeps its age, or frequent restarts could hold it off.
+  if [ -e "$UPDATE_WAIT_FILE" ]; then backdate "$UPDATE_STAMP" $((UPDATE_INTERVAL_MINUTES * 60 + 60)); fi
 
   trap supervisor_shutdown TERM HUP
   export TS_LOGS_DIR="$LOGS_DIR"
@@ -937,6 +1112,36 @@ update_log() {
   say "$*"
 }
 
+# Makes the update loop look again in an hour rather than a day.
+check_in_an_hour() { backdate "$UPDATE_STAMP" $((UPDATE_INTERVAL_MINUTES * 60 - 3600)); }
+
+# Ends a wait for sessions, and the hourly checks with it: the next check is a day away again.
+end_wait() {
+  [ -e "$UPDATE_WAIT_FILE" ] || return 0
+  rm -f "$UPDATE_WAIT_FILE"
+  touch "$UPDATE_STAMP"
+}
+
+# Whether an automatic update to VERSION waits: 0 while sessions over Tailscale are open, 1 when none
+# is, and 2 when they have held it back for SESSION_WAIT_MINUTES. update-waiting marks when the wait
+# began, and while it lasts the updater looks again every hour.
+update_waits() {
+  local sessions
+
+  sessions=$(open_sessions "$(daemon_pids)")
+  [ "$sessions" != 0 ] || return 1
+  if [ -n "$(find "$UPDATE_WAIT_FILE" ! -mmin "-$SESSION_WAIT_MINUTES" 2>/dev/null)" ]; then
+    update_log "Sessions over Tailscale have held Tailscale $1 back for $((SESSION_WAIT_MINUTES / 1440)) days; installing it now."
+    return 2
+  fi
+  if [ ! -e "$UPDATE_WAIT_FILE" ]; then
+    : >"$UPDATE_WAIT_FILE"
+    update_log "Tailscale $1 is out. Installing it once $(sessions_close "$sessions"), or in $((SESSION_WAIT_MINUTES / 1440)) days at the latest."
+  fi
+  check_in_an_hour
+  return 0
+}
+
 # Restarts tailscaled onto the binaries on disk and checks that it is healthy: it runs the
 # expected version, LocalAPI answers, it is back online if it was online before, and it survives
 # a soak period. Returns 2 when the outcome says nothing about the release, because Tailspace was
@@ -992,7 +1197,7 @@ keep_version() {
 }
 
 update_worker() {
-  local auto=0 pinned="" target ondisk running status was_online=0 result
+  local auto=0 pinned="" target ondisk running status was_online=0 result waits="" next
 
   if [ "${1:-}" = --auto ]; then
     auto=1
@@ -1008,40 +1213,74 @@ update_worker() {
   exec 8>>"$PREFIX_LOCK"
   if ! flock -n 8; then
     say "Another install or update is running."
-    return 0
+    return 3
   fi
   lock_current || return 0
   # Uninstall may have removed this server before the update got the lock.
   [ -d "$STATE_DIR" ] || return 0
   touch "$UPDATE_STAMP"
-  if [ "$auto" = 1 ] && [ "$AUTO_UPDATE" != 1 ]; then return 0; fi
+  if [ "$auto" = 1 ] && [ "$AUTO_UPDATE" != 1 ]; then
+    end_wait
+    return 0
+  fi
+  # While an update waits for sessions, look again in an hour, whatever happens below.
+  if [ -e "$UPDATE_WAIT_FILE" ]; then check_in_an_hour; fi
 
   if [ -z "$target" ]; then target=$(latest_version); fi
   if [ -z "$target" ]; then
     # Look again in an hour rather than tomorrow.
-    touch -d '-23 hours' "$UPDATE_STAMP"
+    check_in_an_hour
     update_log "Could not look up the latest Tailscale version."
     return 1
   fi
-  if [ "$auto" = 1 ] && [ "$target" = "$(cat "$BAD_VERSION_FILE" 2>/dev/null)" ]; then return 0; fi
+  if [ "$auto" = 1 ] && [ "$target" = "$(cat "$BAD_VERSION_FILE" 2>/dev/null)" ]; then
+    end_wait
+    return 0
+  fi
 
   # A tailscaled that doesn't answer can't be health-checked, so the update waits.
   status=$(status_json)
   running=$(daemon_version "$status")
   if [ -z "$running" ] && [ -n "$(supervisor_pids)" ]; then
-    update_log "Tailscale isn't answering, so the update waits until tomorrow."
+    if [ -e "$UPDATE_WAIT_FILE" ]; then
+      update_log "Tailscale isn't answering, so the update tries again in an hour."
+    else
+      update_log "Tailscale isn't answering, so the update waits until tomorrow."
+    fi
     return 1
   fi
 
   ondisk=$(installed_version)
-  if [ "$target" != "$ondisk" ] && { [ "$auto" = 0 ] || version_gt "$target" "$ondisk"; }; then
-    update_log "Downloading Tailscale $target (installed: ${ondisk:-none})"
-    if ! fetch_release "$target" || ! install_release; then
-      update_log "Failed to download or install Tailscale $target"
+  # What runs after this: the download if it's newer, or what is on disk, which another server that
+  # shares this home may have updated already.
+  next="$ondisk"
+  if [ "$target" != "$ondisk" ] && { [ "$auto" = 0 ] || version_gt "$target" "$ondisk"; }; then next="$target"; fi
+  # An automatic update waits before the download, so that the binaries on disk stay the running ones.
+  if [ "$auto" = 1 ] && [ -n "$running" ] && [ "$next" != "$running" ]; then
+    update_waits "$next"
+    waits=$?
+    [ "$waits" != 0 ] || return 0
+  fi
+  if [ "$next" != "$ondisk" ]; then
+    update_log "Downloading Tailscale $next (installed: ${ondisk:-none})"
+    if ! fetch_release "$next"; then
+      update_log "Failed to download Tailscale $next"
       return 1
     fi
-    ondisk="$target"
+    if ! keep_previous; then
+      update_log "Could not keep Tailscale ${ondisk:-none} for rolling back"
+      return 1
+    fi
+    # Someone may have connected during the download and the copy, which can take minutes.
+    if [ "$waits" = 1 ] && update_waits "$next"; then return 0; fi
+    if ! swap_release; then
+      update_log "Failed to install Tailscale $next"
+      return 1
+    fi
+    ondisk="$next"
   fi
+  # The update goes ahead or has nothing left to do, so a wait for sessions is over.
+  end_wait
   if [ -z "$running" ] || [ "$running" = "$ondisk" ]; then
     if [ "$auto" = 0 ]; then say "Tailscale $ondisk is in place."; fi
     keep_version "$pinned"
@@ -1413,7 +1652,7 @@ preflight() {
   # The supervisor runs with the system PATH only, so that is where the tools must be.
   missing=$(
     PATH="$SYSTEM_PATH"
-    for cmd in flock setsid timeout tar gzip mktemp readlink sort find grep cut head tail wc cksum paste env sleep nproc; do
+    for cmd in flock setsid timeout tar gzip mktemp readlink sort find grep cut head tail wc cksum paste env sleep nproc awk sed cat ls id date touch tr tee; do
       command -v "$cmd" >/dev/null || printf '%s ' "$cmd"
     done
     command -v curl >/dev/null || command -v wget >/dev/null || printf 'curl-or-wget '
@@ -1597,11 +1836,37 @@ enroll() {
 
 listening() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 
+# Prints "UID PORT ADDRESS" for every listening TCP socket in this network namespace, the port and
+# the address in hex as /proc/net/tcp and tcp6 give them. State 0A is LISTEN.
+tcp_listeners() { cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | awk '$4 == "0A" { split($2, l, ":"); print $8, l[2], l[1] }'; }
+
+# Whether a program of this account listens on PORT where tailscaled's forwarding, which dials
+# 127.0.0.1, reaches it. An IPv6 wildcard listener takes IPv4 too unless it set IPV6_V6ONLY, which
+# /proc doesn't show, so it counts only when 127.0.0.1 answers and no other user's IPv4 listener
+# could be what answered.
+own_listener() {
+  local me uid port address wildcard=0 others=0
+
+  me=$(id -u)
+  while read -r uid port address; do
+    [ "$((16#$port))" = "$1" ] || continue
+    case "$address" in
+      00000000 | 0100007F | 0000000000000000FFFF000000000000 | 0000000000000000FFFF00000100007F)
+        if [ "$uid" = "$me" ]; then return 0; fi
+        others=1
+        ;;
+      00000000000000000000000000000000) if [ "$uid" = "$me" ]; then wildcard=1; fi ;;
+    esac
+  done < <(tcp_listeners)
+  [ "$wildcard" = 1 ] && [ "$others" = 0 ] && listening "$1"
+}
+
 # With Tailscale SSH on port 22, the host's OpenSSH stays reachable on the tailnet at port 2222.
-# The forward is left out when no OpenSSH listens on port 22, and when something of yours
-# already listens on 2222, which tailscaled then reaches directly.
+# The forward is left out when no OpenSSH listens on port 22, and when a program of yours already
+# listens on 2222, which tailscaled then reaches directly. Another user's program there doesn't
+# count, because the forward takes the port before Tailscale's own forwarding to 127.0.0.1.
 publish_openssh() {
-  if [ "$SSH" = 1 ] && listening 22 && ! listening "$SSH_FALLBACK_PORT"; then
+  if [ "$SSH" = 1 ] && listening 22 && ! own_listener "$SSH_FALLBACK_PORT"; then
     ts serve --bg --tcp "$SSH_FALLBACK_PORT" tcp://localhost:22 >/dev/null 2>&1 ||
       warn "Could not make OpenSSH reachable on port $SSH_FALLBACK_PORT."
   else
@@ -1671,11 +1936,15 @@ cmd_install() {
   # An uninstall may have run while this waited.
   { mkdir -p "$STATE_DIR" && chmod 700 "$PREFIX" "$STATE_DIR"; } || die "Cannot create $STATE_DIR"
   save_settings || die "Cannot write $CONFIG_FILE"
+  if [ "$AUTO_UPDATE" = 0 ]; then end_wait; fi
   save_proxy
   check_network
 
   if install_program; then stale=1; fi
-  if install_tailscale; then stale=1; fi
+  if install_tailscale; then
+    stale=1
+    end_wait
+  fi
   install_links || warn "Could not create the links in $LINK_DIR"
   install_hooks
   with_stop_lock rm -f "$STOPPED_FILE" || exit 1
@@ -1716,6 +1985,7 @@ cmd_set() {
   fi
 
   save_settings || die "Cannot write $CONFIG_FILE"
+  if [ "$AUTO_UPDATE" = 0 ]; then end_wait; fi
   save_proxy
   install_hooks
   if [ "${#args[@]}" -gt 0 ]; then ts set "${args[@]}" || die "'tailscale set' failed."; fi
@@ -1744,7 +2014,7 @@ stopped_hint() {
 }
 
 status_summary() {
-  local supervisors daemons proxy path state route
+  local supervisors daemons proxy path state route update=off expiry="" seconds status
 
   say "Tailspace $TAILSPACE_VERSION · $PREFIX · $(uname -n)"
   if [ ! -d "$STATE_DIR" ]; then
@@ -1767,27 +2037,63 @@ status_summary() {
   if [ -z "$proxy" ]; then
     route="direct path"
   elif [ "$path" = proxy ]; then
-    route="proxy path through $proxy, back to the direct path once it works"
+    route="proxy path through $proxy, back to the direct path once it works, waiting up to $((SESSION_WAIT_MINUTES / 1440)) days in all while sessions over Tailscale are open"
   else
     route="direct path; proxy path through $proxy"
   fi
+  if [ "$AUTO_UPDATE" = 1 ]; then
+    update=daily
+    if [ -e "$UPDATE_WAIT_FILE" ] && [ -n "$supervisors" ]; then
+      if [ -n "$(find "$UPDATE_WAIT_FILE" ! -mmin "-$SESSION_WAIT_MINUTES" 2>/dev/null)" ]; then
+        update="daily; a new version is past its wait for sessions and installs at the next try"
+      else
+        update="daily; a new version waits for sessions over Tailscale to close, $((SESSION_WAIT_MINUTES / 1440)) days at most"
+      fi
+    fi
+  fi
+  # Absent for tagged servers and for servers whose key expiry is off, and left out unless the node
+  # runs, since an expired key shows up as a state of its own. Tailscale writes it in UTC; GNU and
+  # BusyBox date both read it as "YYYY-MM-DD hh:mm:ss", and bash's printf shows local time.
+  if [ -n "$daemons" ]; then
+    status=$(status_json)
+    if [ "$(json_string BackendState "$status")" = Running ]; then expiry=$(json_string KeyExpiry "$status"); fi
+  fi
+  case "$expiry" in ????-??-??T??:??:??*Z)
+    if seconds=$(date -u -d "${expiry:0:10} ${expiry:11:8}" +%s 2>/dev/null); then
+      expiry=$(printf '%(%Y-%m-%d %H:%M %Z)T' "$seconds")
+    else
+      expiry="${expiry:0:10} ${expiry:11:5} UTC"
+    fi
+    ;;
+  esac
   say ""
   say "  State        $state"
   say "  Path         $route"
-  say "  Tailscale    $(installed_version), auto-update $([ "$AUTO_UPDATE" = 1 ] && echo daily || echo off)"
+  say "  Tailscale    $(installed_version), auto-update $update"
+  if [ -n "$expiry" ]; then say "  Key expiry   $expiry, unless you turn it off in the admin console"; fi
   say "  Autostart    $([ "$AUTOSTART" = 1 ] && echo "on: $(hooked_files | paste -sd' ' -)$(cron_present && echo ', crontab')" || echo off)"
   say "  SSH          $([ "$SSH" = 1 ] && echo "Tailscale SSH on port 22, OpenSSH on port $SSH_FALLBACK_PORT" || echo "OpenSSH on port 22")"
 }
 
 cmd_status() {
+  local peers
+
   status_summary || return 1
   say ""
   if [ -n "$(daemon_pids)" ]; then
-    ts status
+    peers=$(ts status)
+    if [ -n "$peers" ]; then printf '%s\n' "$peers"; fi
     if ! status_json | grep -q '"cache-network-maps"'; then
       say ""
       say "Tip: turn on cache-network-maps in your policy, so that after a restart this server reaches your other devices sooner. See ADVANCED.md in the Tailspace repository."
     fi
+    # `tailscale status` marks a device that is connected through a DERP relay this way, after
+    # "active;" and, for an exit node, a note about that.
+    case "$peers" in *'; relay "'*)
+      say ""
+      say "Tip: some of your devices reach this server through a DERP relay, which is slower than a direct connection. See \"Direct connections and relays\" in ADVANCED.md in the Tailspace repository."
+      ;;
+    esac
     say ""
   fi
   say "Recent events:"

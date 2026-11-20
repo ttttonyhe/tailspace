@@ -18,6 +18,8 @@
 
 ## 安装
 
+如果服务器属于某个共享集群，先看看集群的规定。Tailspace 会让 Tailscale 一直在后台运行，Tailscale SSH 也会绕过集群自己的两步验证，有些集群禁止其中一项或两项。
+
 在服务器上运行：
 
 ```bash
@@ -35,7 +37,8 @@ Tailscale 的设备密钥默认 180 天后过期。想让服务器一直保持�
 - Tailscale 崩溃时，重新启动它。
 - 服务器重启后再次启动 Tailscale：有 cron 的服务器上立即启动，否则等你下次登录时启动。
 - 如果服务器用 HTTP 代理上网，直连和代理哪个断了，就切到另一个。
-- 每天更新 Tailscale，新版本有问题就回滚。
+- 每天更新 Tailscale，最多等 3 天让你的会话结束，新版本有问题就回滚。
+- 让共享服务器上的其他用户用不了你的 tailnet。
 - 遇到需要你处理的问题，停下来告诉你原因，而不是无休止地重试。
 
 而且它很轻：
@@ -55,6 +58,6 @@ tailspace self-update # 更新 Tailspace 自身
 tailspace uninstall   # 让服务器登出，并删除一切
 ```
 
-auth key、代理、各项设置以及工作原理，见 [ADVANCED.zh-CN.md](ADVANCED.zh-CN.md)。
+auth key、代理、各项设置、没有 root 时有哪些不同，以及工作原理，见 [ADVANCED.zh-CN.md](ADVANCED.zh-CN.md)。
 
 Tailspace 是一个 bash 脚本，以 [MIT 许可证](LICENSE)发布，与 Tailscale Inc. 没有关联。

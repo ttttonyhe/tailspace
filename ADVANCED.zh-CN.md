@@ -1,6 +1,6 @@
 # Tailspace 详解
 
-[README](README.zh-CN.md) 介绍了常规安装。本文介绍其余的一切：auth key、SSH、Tailspace 如何让服务器保持在线、命令与设置、代理，以及参考信息。
+[README](README.zh-CN.md) 介绍了常规安装。本文介绍其余的一切：auth key、SSH、Tailspace 如何让服务器保持在线、命令与设置、代理与中继、从服务器连接你的其他设备，以及参考信息。
 
 [English](ADVANCED.md) · 简体中文
 
@@ -20,11 +20,13 @@ curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace 
 
 ## SSH
 
-Tailspace 会开启 Tailscale SSH，你用 Tailscale 身份登录，不需要 SSH 密钥。Tailscale SSH 占用 22 端口。如果服务器上还运行着 OpenSSH，Tailspace 会让它在 2222 端口上可用，所以 `ssh -p 2222 you@lab-07` 依然可以用你平时的密钥和配置。
+Tailspace 会开启 Tailscale SSH，你用 Tailscale 身份登录，不需要 SSH 密钥。Tailscale SSH 占用 22 端口。如果服务器上还运行着 OpenSSH，Tailspace 会让它在 2222 端口上可用，除非你的某个程序已经占用了 127.0.0.1:2222，所以 `ssh -p 2222 you@lab-07` 依然可以用你平时的密钥和配置。不过 OpenSSH 看到的这些连接都来自服务器本机，所以它的日志、`authorized_keys` 里的 `from=` 限制，以及按地址封禁的工具，都分不清是你的哪台设备。Tailscale SSH 则知道是谁连了进来。
 
 Tailscale 的默认策略让 Tailscale SSH 以 check 模式运行，每 12 小时要你在浏览器里重新登录一次。不想这样，就把策略 `ssh` 规则里的 `"check"` 改成 `"accept"`。
 
 其他端口都直通服务器。比如服务器上监听 8888 端口的 Jupyter Notebook，访问 `lab-07:8888` 就能打开。
+
+重启 Tailscale 会断开所有经 Tailscale 的会话，包括你的 SSH 会话、访问那个 Notebook 这类服务器上程序的连接，以及服务器连向你其他设备的连接。能等的 Tailscale 重启，比如更新，Tailspace 在看到有会话开着时会推迟，最多推迟 3 天，见[更新](#更新)。不过长时间运行的任务还是放进 tmux 或 screen 里，这样断线也不会让你丢掉工作。
 
 ## Tailspace 如何让服务器保持在线
 
@@ -49,7 +51,7 @@ Tailscale 只在启动时读取代理设置，所以没法自己切换路径。�
   <img src="assets/paths-light.svg" alt="两条泳道的时间线，分别是直连路径和代理路径。服务器起初走直连路径。直连路径不通后，监管进程等待约 4 分钟让 Tailscale 自行恢复，然后切换到代理路径。后来代理路径也不通了，此时直连路径已经恢复，于是等待约 1 分钟后，监管进程切回直连路径。">
 </picture>
 
-切换之前，监管进程会先给 Tailscale 留出自行恢复的时间，直连路径 4 分钟，代理路径 1 分钟。如果两条路径都不通，它每分钟检查一次，哪条先恢复就用哪条。它优先使用直连路径，因为走代理路径时，服务器只和代理一样可靠。切到代理路径后，等直连路径重新稳定下来，它就会切回去，最早在 20 分钟后。
+切换之前，监管进程会先给 Tailscale 留出自行恢复的时间，直连路径 4 分钟，代理路径 1 分钟。如果两条路径都不通，它每分钟检查一次，哪条先恢复就用哪条。它优先使用直连路径，因为走代理路径时，服务器只和代理一样可靠。切到代理路径后，等直连路径重新稳定下来，它就会切回去，最早在 20 分钟后。因为切换路径要重启 Tailscale，它还会等到没有经 Tailscale 的会话，累计最多等 3 天。离开已经不通的路径时，则不等任何人断开。
 
 <details>
 <summary>精确规则</summary>
@@ -58,13 +60,15 @@ Tailscale 只在启动时读取代理设置，所以没法自己切换路径。�
 - Tailscale 离线后，监管进程在直连路径上等 4 分钟，留给 Tailscale 自己重连；在代理路径上等 1 分钟。
 - 然后，它用 `tailscale debug ts2021` 经正在使用的路径向协调服务器新建一条连接，以此测试这条路径。如果不通，就测试另一条，另一条通就切换过去。如果正在使用的路径连续两次测试都通，Tailscale 却仍然离线，说明 Tailscale 卡住了，监管进程会在同一条路径上重启它。如果两条都不通，就每分钟再测一次。
 - 因其他原因重启 Tailscale 之后，包括重启 Tailspace 本身之后，只要原来的路径还通，监管进程就继续用它。
-- 切到代理路径后，监管进程先等 15 分钟，再每 5 分钟测试一次直连路径，连续两次成功就切回去。如果切回后 30 分钟内直连路径又不通了，这 15 分钟的等待时间就加倍，最长 4 小时。
+- 切到代理路径后，监管进程先等 15 分钟，再每 5 分钟测试一次直连路径。它要在 Tailscale 在线时连续两次测试成功才会切回去，而且这时要么没有经 Tailscale 的会话，要么会话已经让它累计推迟了 3 天。如果切回后 30 分钟内直连路径又不通了，这 15 分钟的等待时间就加倍，最长 4 小时。
 
 </details>
 
 ### 更新
 
 监管进程每天检查一次 Tailscale 有没有新版本。如果有，它会安装新版本、重启 Tailscale，并等待 Tailscale 在 2 分钟内重新上线、再稳定运行 30 秒。如果没有做到，Tailspace 会回滚到上一个版本，以后也不再自动安装这个版本。如果监管进程无法判断，比如网络断了或者你停止了 Tailspace，它同样会回滚，并在一天后再试一次新版本。
+
+只要还有经 Tailscale 的会话开着，监管进程就先不装新版本，因为安装要重启 Tailscale。它能看到 SSH 会话、Tailscale 交给 127.0.0.1 或 ::1 上程序的连接，以及一直连着 Tailscale 的 `tailscale` 命令，比如 `tailscale nc` 或前台运行的 `tailscale serve`。它看不到转发到 Unix socket 或其他地址的 serve。不运行 shell 的 Tailscale SSH 会话，比如 `ssh -N -L 8888:localhost:8888 you@lab-07`，只在它把连接转发到 127.0.0.1 或 ::1 时才看得到。监管进程每小时再看一次，3 天后无论如何都会更新，这样一直有人在用的服务器也能拿到修复。有更新在等待时，`tailspace status` 会显示出来，运行 `tailspace update` 可以立即安装。
 
 ### Tailspace 何时会放弃
 
@@ -135,18 +139,29 @@ curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace 
 
 只支持 `http://` 代理。Tailscale 会把所有代理都当作 HTTP 代理，即使写成 `socks5://` 也一样，而且它会忽略 `ALL_PROXY`。
 
-两台设备无法直接连接时，流量会经过 DERP 中继，而中继可能离得很远。有代理的服务器常常就是这种情况。有两个 Tailscale 功能可以把中继拉近：
+## 直连与中继
+
+只要可能，Tailscale 就会让你的设备直接连到服务器。连不上时，常见原因是服务器在 hard NAT 或防火墙后面，或者只能通过代理上网，流量就会改走中继。如果你设置了两台设备都能连上的 peer relay，就走它，否则走 Tailscale 的 DERP 中继。DERP 中继更慢，因为 Tailscale 限制了它们的带宽，而且它们可能离得很远。正在活动的设备经 DERP 中继连到服务器时，`tailspace status` 会告诉你，它列出的设备清单里也会在那台设备旁边显示 `relay`。
+
+有两个 Tailscale 功能可以把中继拉近：
 
 - 在服务器附近运行[你自己的 DERP 服务器](https://tailscale.com/kb/1118/custom-derp-servers)，对两条路径都有帮助。它不需要域名，因为 `derper --certmode manual --hostname IP` 会自己生成证书，并打印出要加进策略的配置。启动时加上 `--verify-clients`，只让你的 tailnet 使用它，这要求同一台机器上也运行着 Tailscale。
-- [Peer relays](https://tailscale.com/docs/features/peer-relay) 需要 Tailscale 1.86 或更新版本，能让你自己的某台设备为其他设备做中继。它使用 UDP，而代理不转发 UDP，所以只在直连路径上有用。
+- [Peer relays](https://tailscale.com/docs/features/peer-relay) 需要 Tailscale 1.86 或更新版本，能让你自己的某台设备为其他设备做中继。它使用 UDP，而 HTTP 代理不转发 UDP，所以只在服务器能直接发出 UDP 时有用。
+
+让 Tailscale 不需要 root 也能运行的 userspace 网络，很少是拖慢你的原因。在一个运行 Tailscale 1.104.7 的 Kubernetes Pod 上，它在一条连到该 Pod 自身 tailnet 地址的连接上跑出了约 10 Gbit/s，这个测试不含 WireGuard 和网络本身。
 
 ## 从服务器连接其他设备
 
-常规安装的 Tailscale 会添加一块虚拟网卡，任何程序都能通过它访问你的其他设备。没有 root 就没有这块网卡，所以服务器上的程序要通过 `tailscale nc` 来连接：
+常规安装的 Tailscale 会添加一块虚拟网卡，任何程序都能通过它访问你的其他设备。没有 root 就没有这块网卡，所以服务器上的程序要通过 `tailscale nc` 来连接。用 SSH 的话，在 `~/.ssh/config` 里把设备加一次：
 
-```bash
-ssh -p 2222 -o ProxyCommand='tailscale nc %h %p' you@lab-01
+```text
+Host lab-01
+  User you
+  Port 2222
+  ProxyCommand tailscale nc %h %p
 ```
+
+之后 `ssh lab-01` 就会用你平时的密钥，登录另一台 Tailspace 服务器在 2222 端口上提供的 OpenSSH，`scp`、`rsync` 和 `git` 也都能按名字连到它。不能经由 `tailscale nc` 的程序，比如 curl 或浏览器，访问不到你的 tailnet。lab-01 这样的 MagicDNS 名字只在 Tailscale 内部解析，`ping` 也连不到你的设备，不过 `tailscale ping lab-01` 可以。Tailscale 也为这类程序提供 SOCKS5 和 HTTP 代理，但 Tailspace 不开启它们。它们没有密码，一旦开启，共享服务器上的其他每个用户都能借它们访问你的设备。
 
 如果服务器带有标签，示例策略会拦下这类连接，因为它禁止带标签的服务器连接你的其他设备。要让服务器之间互相访问，取消策略里允许 `tag:server` 访问 `tag:server` 那一行的注释。
 
@@ -182,6 +197,7 @@ shell 检查位于你 shell 启动文件里的两行标记注释之间，同样�
 - **安装时连不上 controlplane.tailscale.com。** 服务器需要代理，见[有代理的服务器](#有代理的服务器)。
 - **Tailscale SSH 拒绝连接。** 确认你的策略里有允许你的 `ssh` 规则，比如示例策略里那条，并用安装 Tailspace 的那个账号连接。
 - **服务器重启后什么都没在运行。** 这台服务器没有 cron，重启后也还没有人登录过。用安装 Tailspace 之前的方式登录一次即可。
+- **传输很慢，或者打字有延迟。** 你的设备可能经 DERP 中继连到服务器，`tailspace status` 会指出这一点，见[直连与中继](#直连与中继)。
 - **安装提示下载的 tailscaled 无法运行。** 你的家目录不允许运行程序。用 `TAILSPACE_PREFIX` 装到别处。
 - **安装提示文件锁不可用，或者路径太长。** 用 `TAILSPACE_PREFIX` 装到本地磁盘上一个较短的路径。
 
@@ -189,13 +205,14 @@ shell 检查位于你 shell 启动文件里的两行标记注释之间，同样�
 
 - Linux 3.2 或更新版本，包括 CentOS 7，架构为 x86_64、arm64、32 位 ARM、386 或 riscv64
 - bash 4.2 或更新版本，以及 curl 或 wget
-- `flock`、`setsid` 和 `timeout`，几乎所有发行版都自带
+- `awk`、`flock`、`setsid` 和 `timeout`，几乎所有发行版都自带
 - 服务器上的一个普通账号
 
 ### 安全
 
-- Tailscale 以你的身份运行，你的账号能做什么，它就只能做什么。只有你能读取 `~/.tailspace`。
-- 到达服务器 tailnet IP 的每条连接，Tailscale 都会转发到服务器上的同一端口。所以服务器上监听的任何程序，无论是你的还是其他用户的，都能被你的策略所允许的设备访问。要加以限制，就在策略里只放行需要的端口，比如 `tcp:22` 和 `tcp:2222`。
+- 如果服务器属于某个共享集群，先看看集群的规定。Tailspace 会让 Tailscale 一直在后台运行，Tailscale SSH 也会绕过集群自己的两步验证，有些集群禁止其中一项或两项。
+- Tailscale 以你的身份运行，你的账号能做什么，它就只能做什么。只有你能进入 `~/.tailspace`，控制 Tailscale 的 socket 就在里面。Tailspace 也不开启 Tailscale 的代理，所以服务器上的其他用户用不了你的 tailnet。
+- 到达服务器 tailnet IP 的每条连接，Tailscale 都会交给 127.0.0.1 上的同一端口，除非这个端口已被占用：开启 Tailscale SSH 时它占用 22，Tailspace 给 OpenSSH 的转发占用 2222，`tailscale serve` 转发占用你指定的端口。所以服务器上监听 127.0.0.1 或所有地址的任何程序，无论是你的还是其他用户的，都能被你的策略所允许的设备访问，即使它只监听 127.0.0.1，因为它默认能访问这个地址的都可信。
 - Tailscale SSH 只会让人以你的账号登录，谁能连接由你的策略决定。示例策略允许 tailnet 里的所有人连接，所以如果你和别人共用 tailnet，请把它 `ssh` 规则里的 `autogroup:member` 换成你自己的登录名。
 - Tailscale 的新版本通过 HTTPS 从 `pkgs.tailscale.com` 下载，HTTPS 是验证来源的唯一手段。新版本只有在能运行并重新上线后才会保留，见[更新](#更新)。Tailspace 从不自动更新自己，`tailspace self-update` 会从本仓库的 `main` 分支下载最新的 Tailspace 并运行。
 

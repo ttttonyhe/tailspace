@@ -36,7 +36,7 @@ Path-scoped rules live in `.rules/`. When you read a file that matches a rule's 
 
 ## Facts for the whole repo
 
-- The documents and `assets/*.svg` quote numbers from `tailspace`: `PROBE_INTERVAL`, `PROBE_FAILURES`, `DIRECT_LOSS_GRACE`, `PROXY_LOSS_GRACE`, `FAILBACK_HOLDDOWN`, `FAILBACK_CHECK`, `FAILBACK_HOLDDOWN_MAX`, `FLAP_WINDOW`, `FAILURE_LIMIT`, `RESTART_DELAY`, `UPDATE_HEALTH_TIMEOUT`, `UPDATE_SOAK`, `LOG_MAX_BYTES` and `SSH_FALLBACK_PORT`. `assets/paths-*.svg` draws the two grace periods as "wait 4 min" and "wait 1 min". They also quote the measurements listed in `.rules/docs.md`. Change all of them together.
+- The documents and `assets/*.svg` quote numbers from `tailspace`: `PROBE_INTERVAL`, `PROBE_FAILURES`, `DIRECT_LOSS_GRACE`, `PROXY_LOSS_GRACE`, `FAILBACK_HOLDDOWN`, `FAILBACK_CHECK`, `FAILBACK_HOLDDOWN_MAX`, `FLAP_WINDOW`, `FAILURE_LIMIT`, `RESTART_DELAY`, `UPDATE_HEALTH_TIMEOUT`, `UPDATE_SOAK`, `SESSION_WAIT_MINUTES`, `LOG_MAX_BYTES` and `SSH_FALLBACK_PORT`. `assets/paths-*.svg` draws the two grace periods as "wait 4 min" and "wait 1 min". They also quote the measurements listed in `.rules/docs.md`. Change all of them together.
 - Never put an auth key or any other secret in a command line. Containers can share the host's PID namespace, so every user can read `/proc/*/cmdline`. Pass keys as `TS_AUTHKEY=file:PATH` with a 0600 file outside the repo.
 - Tests against a real tailnet create real machines. Run them under a throwaway `HOME`, as `.rules/program.md` describes, and delete the machines in the admin console afterwards.
 - Commit sources only. Rendered previews, downloaded tools and fonts stay outside the repo; the one rendered file in it is `assets/social-preview.png`.
