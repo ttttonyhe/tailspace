@@ -14,6 +14,19 @@ sleep() { SECONDS=$((SECONDS + ${1%.*})); }
 log() { :; }
 rotate_log() { :; }
 
+# An hour instead of three days keeps the hold scenarios short.
+# shellcheck disable=SC2034  # read by watch_daemon
+SESSION_WAIT_MINUTES=60
+
+# Whether the clock is in WINDOW, FROM-TO in seconds, which ends before TO. An empty window never is.
+within() {
+  [ -n "$1" ] || return 1
+  [ "$SECONDS" -ge "${1%-*}" ] && [ "$SECONDS" -lt "${1#*-}" ]
+}
+
+# One session, open until SESSIONS_UNTIL.
+open_sessions() { if [ "$SECONDS" -lt "$SESSIONS_UNTIL" ]; then echo 1; else echo 0; fi; }
+
 # The watcher runs until its parent changes; here it runs for MAX_ITERATIONS probes.
 is_child_of() {
   ITERATION=$((ITERATION + 1))
@@ -21,13 +34,16 @@ is_child_of() {
 }
 
 status_json() {
+  local online="$ONLINE"
+
   [ "$API_OK" = 1 ] || return 1
-  printf '{\n  "BackendState": "%s",\n  "Self": {\n    "Online": %s\n  }\n}\n' "$STATE" "$ONLINE"
+  if within "$OFFLINE"; then online=false; fi
+  printf '{\n  "BackendState": "%s",\n  "Self": {\n    "Online": %s\n  }\n}\n' "$STATE" "$online"
 }
 
 path_works() {
   if [ "$1" = direct ]; then
-    [ "$DIRECT_OK" = 1 ]
+    [ "$DIRECT_OK" = 1 ] && ! within "$DIRECT_DOWN"
   else
     [ "$PROXY_OK" = 1 ] && [ "$SECONDS" -ge "$PROXY_FROM" ]
   fi
@@ -48,7 +64,7 @@ run_watcher() {
   shift
 
   API_OK=1 STATE=Running ONLINE=true DIRECT_OK=1 PROXY_OK=1 PROXY_FROM=0 HAS_PROXY=1 BUSY=0
-  ENROLLED=0 MAX_ITERATIONS=200 ITERATION=0 SECONDS=0
+  ENROLLED=0 MAX_ITERATIONS=200 ITERATION=0 SECONDS=0 SESSIONS_UNTIL=0 DIRECT_DOWN="" OFFLINE=""
   for assignment in "$@"; do eval "$assignment"; done
 
   dir=$(mktemp -d "$SCRATCH/case.XXXXXX") || {
@@ -92,5 +108,16 @@ scenario "must log in during an install: wait" direct none STATE=NeedsLogin ENRO
 scenario "never enrolled, must log in: wait" direct none STATE=NeedsLogin MAX_ITERATIONS=100
 scenario "turned off with tailscale down: nothing to do" direct none STATE=Stopped ONLINE=false MAX_ITERATIONS=100
 scenario "Starting but online: nothing to do" direct none STATE=Starting MAX_ITERATIONS=100
+
+# Holds for sessions. The direct path is good from 900 s, so the hold starts at the check at 1200 s
+# and fails back once an hour of holding has passed; tests that fail, or time offline, don't count.
+scenario "a session open until 1500 s: fail back when it closes" proxy "failback 1500" SESSIONS_UNTIL=1500
+scenario "a session that stays open: fail back after an hour of holding" proxy "failback 4800" SESSIONS_UNTIL=999999 MAX_ITERATIONS=300
+scenario "failed direct tests pause the hold" proxy "failback 6000" SESSIONS_UNTIL=999999 DIRECT_DOWN=2000-2600 MAX_ITERATIONS=350
+scenario "...however long the direct path stays down" proxy "failback 33300" SESSIONS_UNTIL=999999 DIRECT_DOWN=2000-30000 MAX_ITERATIONS=1700
+scenario "a short time offline restarts the streak and pauses the hold" proxy "failback 5400" SESSIONS_UNTIL=999999 OFFLINE=2000-2060 MAX_ITERATIONS=300
+scenario "sessions don't hold a failover from the proxy path" proxy "failover 80" ONLINE=false PROXY_OK=0 SESSIONS_UNTIL=999999
+scenario "...nor one from the direct path" direct "failover 260" ONLINE=false DIRECT_OK=0 SESSIONS_UNTIL=999999
+scenario "...nor a restart when stuck" direct "stuck 500" ONLINE=false SESSIONS_UNTIL=999999
 
 finish

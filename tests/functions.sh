@@ -1,6 +1,7 @@
 #!/bin/bash
 # Checks the helper functions of tailspace on their own: reading status, settings, options, auth
-# keys, proxies, the shell hook and the stopped file. Needs no network and starts no processes.
+# keys, proxies, the shell hook, the stopped file, sessions and listeners, and updates that wait
+# for sessions. Needs no network and starts no processes.
 # Usage: bash tests/functions.sh
 
 # shellcheck source=tests/lib.sh
@@ -234,5 +235,196 @@ if [ "$EUID" -ne 0 ]; then
   chmod 444 "$SCRATCH/read-only"
   check "stop fails when an older reason can't be replaced" "$( (stop_with_file "$SCRATCH/read-only") >/dev/null 2>&1 || echo refused)" refused
 fi
+
+# ---------------------------------------------------------------- sessions and listeners
+
+# Every fixture below runs inside $(...), so the stubs it defines end with it.
+
+check "a loopback proxy, as /proc/net/tcp writes it" "$(proxy_sockets http://127.0.0.1:1089)" 0100007F:0441
+check "user info, path, query and fragment are dropped" "$(proxy_sockets 'http://u:p@127.0.0.1:1089/x?y=1#z')" 0100007F:0441
+check "an empty or missing port means 80" "$(proxy_sockets http://127.0.0.1: && proxy_sockets http://127.0.0.1)" "0100007F:0050
+0100007F:0050"
+check "a port with leading zeros" "$(proxy_sockets http://127.0.0.2:03128)" 0200007F:0C38
+check "localhost is both loopback addresses" "$(proxy_sockets http://LOCALHOST:7890 | paste -sd' ' -)" "0100007F:1ED2 00000000000000000000000001000000:1ED2"
+check "::1 however it's written" "$(proxy_sockets 'http://[0:0:0:0:0:0:0:1]:7890')" 00000000000000000000000001000000:1ED2
+check "IPv4-mapped addresses, dotted or hex, are IPv4" "$(proxy_sockets 'http://[::ffff:127.0.0.1]:7890' && proxy_sockets 'http://[::FFFF:7F00:1]:7890')" "0100007F:1ED2
+0100007F:1ED2"
+check "a remote proxy or none leaves nothing out" "$(proxy_sockets http://10.0.0.5:3128)$(proxy_sockets '')" ""
+check "daemon_proxy reads https_proxy from the environment a process started with" "$(daemon_proxy $$)" "$(tr '\0' '\n' <"/proc/$$/environ" | sed -n 's/^https_proxy=//p' | head -n 1)"
+
+# Fixed /proc tables for a tailscaled with PID 4242. Counted: one child; forwards to 127.0.0.1 that
+# are established or half-closed, states 01, 04, 05 and 08; one to ::1; one client of the LocalAPI
+# socket, whose path has a space and a backslash. Not counted: the loopback proxy, TIME_WAIT,
+# 127.0.0.53, a remote address, 127.0.0.2 on the proxy's port, the listening socket, and a unix
+# socket without a path, such as a D-Bus connection. ls fails, as it does while descriptors change.
+open_sessions_fixture() {
+  SOCKET="$SCRATCH/a b\\c/tailscaled.sock"
+  # shellcheck disable=SC2329  # called by open_sessions
+  proc_pids() { if [ "$1" = 1 ]; then echo 501; fi; }
+  # shellcheck disable=SC2329  # called by open_sessions
+  daemon_proxy() { echo http://127.0.0.1:1089; }
+  # shellcheck disable=SC2329  # called by open_sessions
+  ls() {
+    local inode
+
+    for inode in 100 101 102 103 104 105 106 107 108 109 110 111 112; do echo "lrwx------ 1 1000 1000 64 Nov 20 05:00 $inode -> socket:[$inode]"; done
+    return 1
+  }
+  # shellcheck disable=SC2329  # called by open_sessions
+  cat() {
+    if [ "$1" = /proc/net/unix ]; then
+      printf '%s\n' "Num RefCount Protocol Flags Type St Inode Path" "0: 00000002 0 00010000 0001 01 110 $SOCKET" \
+        "0: 00000003 0 00000000 0001 03 111 $SOCKET" "0: 00000003 0 00000000 0001 03 112"
+      return
+    fi
+    printf '%s\n' "  sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode" \
+      "0: 0100007F:A001 0100007F:0016 01 0:0 0:0 0 1000 0 100" "1: 0100007F:A002 0100007F:0441 01 0:0 0:0 0 1000 0 101" \
+      "2: 0100007F:A003 0100007F:0016 04 0:0 0:0 0 1000 0 102" "3: 0100007F:A004 0100007F:0016 05 0:0 0:0 0 1000 0 103" \
+      "4: 0100007F:A005 0100007F:0016 08 0:0 0:0 0 1000 0 104" "5: 0100007F:A006 0100007F:0016 06 0:0 0:0 0 1000 0 105" \
+      "6: 0100007F:A007 3500007F:0035 01 0:0 0:0 0 1000 0 106" "7: 89C10C31:A008 89C10C31:01BB 01 0:0 0:0 0 1000 0 107" \
+      "8: 0100007F:A009 0200007F:0441 01 0:0 0:0 0 1000 0 108" \
+      "0: 00000000000000000000000001000000:A00A 00000000000000000000000001000000:22B8 01 0:0 0:0 0 1000 0 109"
+  }
+  open_sessions 4242
+}
+
+check "open_sessions counts what a restart of tailscaled would cut" "$(open_sessions_fixture)" 7
+check "...and nothing without a PID" "$(open_sessions "")" 0
+
+# Listeners on the port given: another user's on 127.0.0.1:2222, and ours on ::ffff:0.0.0.0:8080,
+# ::1:8081 and :::8082. LISTENING says whether 127.0.0.1 answers.
+own_listener_fixture() {
+  # shellcheck disable=SC2329  # called by tcp_listeners
+  cat() {
+    printf '%s\n' "  sl local_address rem_address st" \
+      "0: 0100007F:08AE 00000000:0000 0A 0:0 0:0 0 1234 0 300" \
+      "1: 0000000000000000FFFF000000000000:1F90 00000000000000000000000000000000:0000 0A 0:0 0:0 0 $(id -u) 0 301" \
+      "2: 00000000000000000000000001000000:1F91 00000000000000000000000000000000:0000 0A 0:0 0:0 0 $(id -u) 0 302" \
+      "3: 00000000000000000000000000000000:1F92 00000000000000000000000000000000:0000 0A 0:0 0:0 0 $(id -u) 0 303"
+  }
+  # shellcheck disable=SC2329  # called by own_listener
+  listening() { [ "${LISTENING:-0}" = 1 ]; }
+  own_listener "$1"
+}
+
+check "another user's listener on 2222 isn't ours" "$(yes_if own_listener_fixture 2222)" no
+check "our ::ffff:0.0.0.0 listener is reachable at 127.0.0.1" "$(yes_if own_listener_fixture 8080)" yes
+check "our ::1 listener isn't" "$(yes_if own_listener_fixture 8081)" no
+check "our :: listener counts when 127.0.0.1 answers" "$(LISTENING=1 yes_if own_listener_fixture 8082)" yes
+check "...and not when it doesn't" "$(LISTENING=0 yes_if own_listener_fixture 8082)" no
+
+check "one session closes" "$(sessions_close 1)" "the session over Tailscale closes"
+check "several sessions close" "$(sessions_close 2)" "the 2 sessions over Tailscale close"
+
+# Whether FILE was last changed about SECONDS ago.
+aged() {
+  local age=$(($(date +%s) - $(stat -c %Y "$1")))
+  [ "$age" -ge $(($2 - 2)) ] && [ "$age" -le $(($2 + 2)) ]
+}
+
+mkdir -p "$STATE_DIR"
+check_in_an_hour
+check "check_in_an_hour puts the next look an hour away" "$(yes_if aged "$UPDATE_STAMP" $((UPDATE_INTERVAL_MINUTES * 60 - 3600)))" yes
+check "backdate doesn't depend on the local time zone" "$(TZ=Europe/Berlin backdate "$UPDATE_STAMP" 86460 && yes_if aged "$UPDATE_STAMP" 86460)" yes
+
+# ---------------------------------------------------------------- updates that wait for sessions
+
+# Stubs for the rest of this file. RUNNING and ONDISK are the versions running and on disk, LATEST
+# the newest release, and calls records what a run did.
+latest_version() { echo "$LATEST"; }
+status_json() { [ -n "$RUNNING" ] && printf '{\n  "Version": "%s-t1",\n  "BackendState": "Running",\n  "Self": {\n    "Online": true\n  }\n}\n' "$RUNNING"; }
+installed_version() { echo "$ONDISK"; }
+daemon_pids() { echo 4242; }
+supervisor_pids() { echo 4241; }
+open_sessions() { cat "$SCRATCH/sessions"; }
+fetch_release() {
+  echo "fetch $1" >>"$SCRATCH/calls"
+  if [ -n "${OPEN_DURING_DOWNLOAD:-}" ]; then echo 1 >"$SCRATCH/sessions"; fi
+}
+keep_previous() { echo keep >>"$SCRATCH/calls"; }
+swap_release() {
+  ONDISK="$LATEST"
+  echo swap >>"$SCRATCH/calls"
+}
+cycle_daemon() {
+  RUNNING="$1"
+  echo "cycle $1" >>"$SCRATCH/calls"
+}
+say() { :; }
+
+calls() {
+  if [ -f "$SCRATCH/calls" ]; then paste -sd, - <"$SCRATCH/calls"; fi
+  rm -f "$SCRATCH/calls"
+}
+
+# A server running 1.104.7 with SESSIONS open and 1.106.0 out, auto-update on.
+setup() {
+  RUNNING=1.104.7 ONDISK=1.104.7 LATEST=1.106.0 AUTO_UPDATE=1
+  save_settings
+  echo "$1" >"$SCRATCH/sessions"
+  rm -f "$UPDATE_WAIT_FILE" "$BAD_VERSION_FILE" "$SCRATCH/calls"
+  : >"$LOG"
+  touch "$UPDATE_STAMP"
+}
+
+setup 2
+(update_worker --auto) >/dev/null
+check "with sessions open, an update downloads nothing and restarts nothing" "$(calls)" ""
+check "...marks the wait" "$(yes_if [ -e "$UPDATE_WAIT_FILE" ])" yes
+check "...logs it" "$(grep -c 'or in 3 days at the latest' "$LOG")" 1
+check "...and looks again in an hour" "$(yes_if aged "$UPDATE_STAMP" 82800)" yes
+(update_worker --auto) >/dev/null
+check "a wait is logged once" "$(grep -c 'or in 3 days at the latest' "$LOG")" 1
+
+touch -d '-3 days -1 hour' "$UPDATE_WAIT_FILE"
+(update_worker --auto) >/dev/null
+check "after 3 days, the update goes ahead with sessions open" "$(calls)" "fetch 1.106.0,keep,swap,cycle 1.106.0"
+check "...says why" "$(grep -c 'back for 3 days; installing it now' "$LOG")" 1
+check "...and ends the wait and the hourly looks" "$(yes_if [ ! -e "$UPDATE_WAIT_FILE" ])$(yes_if aged "$UPDATE_STAMP" 0)" yesyes
+
+setup 0
+(OPEN_DURING_DOWNLOAD=1 && update_worker --auto) >/dev/null
+check "a session that opens during the download stops the swap and the restart" "$(calls)" "fetch 1.106.0,keep"
+check "...and starts a wait" "$(yes_if [ -e "$UPDATE_WAIT_FILE" ])" yes
+
+setup 0
+(update_worker --auto) >/dev/null
+check "with no sessions, an update goes ahead" "$(calls)" "fetch 1.106.0,keep,swap,cycle 1.106.0"
+
+setup 3
+(update_worker) >/dev/null
+check "a manual update never waits" "$(calls)" "fetch 1.106.0,keep,swap,cycle 1.106.0"
+
+setup 2
+LATEST=1.104.7 ONDISK=1.104.8
+(update_worker --auto) >/dev/null
+check "newer binaries on disk from another server wait too" "$(calls)$(yes_if [ -e "$UPDATE_WAIT_FILE" ])" yes
+
+setup 2
+: >"$UPDATE_WAIT_FILE"
+RUNNING=""
+(update_worker --auto) >/dev/null
+check "while waiting, a silent LocalAPI means another try in an hour" "$(grep -c 'tries again in an hour' "$LOG")" 1
+
+setup 0
+: >"$UPDATE_WAIT_FILE"
+backdate "$UPDATE_STAMP" 82800
+echo 1.106.0 >"$BAD_VERSION_FILE"
+(update_worker --auto) >/dev/null
+check "the bad version ends a wait and its hourly looks" "$(yes_if [ ! -e "$UPDATE_WAIT_FILE" ])$(yes_if aged "$UPDATE_STAMP" 0)" yesyes
+
+setup 0
+exec 7>>"$PREFIX_LOCK"
+flock -n 7
+(update_worker --auto) >/dev/null
+check "a busy prefix lock makes the worker return 3" "$?" 3
+exec 7>&-
+
+setup 0
+: >"$UPDATE_WAIT_FILE"
+AUTO_UPDATE=0
+save_settings
+(update_worker --auto) >/dev/null
+check "with auto-update off, a wait ends" "$(yes_if [ ! -e "$UPDATE_WAIT_FILE" ])" yes
 
 finish
