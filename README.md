@@ -7,7 +7,7 @@
 
 **Run Tailscale in Rootless Mode**
 
-Installing [Tailscale](https://tailscale.com) on a remote server requires you to have root (admin) access, which you usually don't if you are on a shared server like an HPC login node or a Kubernetes pod. Tailspace runs and maintains Tailscale connection in [userspace mode](https://tailscale.com/docs/concepts/userspace-networking) without requiring root access, so you can SSH into any server from any of your own devices anywhere.
+Installing [Tailscale](https://tailscale.com) on a remote server requires you to have root (admin) access, which is something you usually don't have if you are on a shared server like an HPC login node or a Kubernetes pod. Tailspace runs and maintains Tailscale connection in [userspace mode](https://tailscale.com/docs/concepts/userspace-networking) without requiring root access, so you can SSH into any server from any of your own devices anywhere.
 
 English · [简体中文](README.zh-CN.md)
 
