@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tailspace 与手动 tailscaled、systemd --user 对比</title>
+  <meta name="description" content="对比 Tailspace 与手动 nohup tailscaled、systemd --user：崩溃重启 Tailscale、服务器重启恢复、代理切换、共享 NFS 与安全隔离。">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/zh/guides/vs-manual-userspace/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/vs-manual-userspace/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/">
+  <link rel="icon" href="../../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="Tailspace 与手动 tailscaled、systemd --user 对比">
+  <meta property="og:description" content="为什么手动 nohup tailscaled 和 systemd --user 在超算、容器和共享服务器上容易失联，以及 Tailspace 的处理方式。">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/zh/guides/vs-manual-userspace/">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace：非 Root 身份运行 Tailscale">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Tailspace 与手动 tailscaled、systemd --user 对比">
+  <meta name="twitter:description" content="免 root 运行 Tailscale 的三种方案对比：Tailspace、手动 nohup tailscaled 与 systemd --user。">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../../styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "inLanguage": "zh-CN",
+        "headline": "Tailspace 与手动 tailscaled、systemd --user 对比",
+        "description": "对比 Tailspace 与手动 nohup tailscaled、systemd --user：崩溃重启 Tailscale、服务器重启恢复、代理切换、共享 NFS 与安全隔离。",
+        "url": "https://ttttonyhe.github.io/tailspace/zh/guides/vs-manual-userspace/",
+        "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/zh/guides/vs-manual-userspace/",
+        "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+        "datePublished": "2026-11-20",
+        "dateModified": "2026-11-20",
+        "author": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "publisher": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "about": [
+          { "@type": "Thing", "name": "Tailscale" },
+          { "@type": "Thing", "name": "Userspace networking" },
+          { "@type": "Thing", "name": "systemd" }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Tailspace", "item": "https://ttttonyhe.github.io/tailspace/zh/" },
+          { "@type": "ListItem", "position": 2, "name": "方案对比", "item": "https://ttttonyhe.github.io/tailspace/zh/guides/vs-manual-userspace/" }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "为什么不直接用 nohup tailscaled --tun=userspace-networking 后台运行？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "单纯的 nohup 进程崩溃或服务器重启后无法恢复，代理断了不会切换，不会自动更新，在共享 NFS 家目录的多台节点上还会互相争抢状态文件。"
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "为什么不用 systemd --user 来托管无 root 的 Tailscale？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "容器和 CentOS 7 通常缺少可用的用户级 systemd 总线，而现代发行版若未由 root 开启 linger，用户退出登录即停止服务。Tailspace 只要有 bash 4.2 就能运行。"
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "我已经在手动跑 tailscaled 了，能直接切到 Tailspace 吗？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "可以。停掉你手动启动的 tailscaled 进程，然后运行 Tailspace 的一行安装命令，它会装进 ~/.tailspace 并在 ~/.local/bin 放入配置好的 tailscale 命令。"
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../../">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/logo-dark.svg">
+          <img src="../../../assets/logo-light.svg" alt="" width="28" height="28">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="nav" aria-label="主导航">
+        <a href="../../">首页</a>
+        <a href="../hpc-slurm/">超算与 Slurm</a>
+        <a href="../kubernetes-docker/">Kubernetes</a>
+        <a href="../proxy-failover/">代理切换</a>
+        <a href="./" aria-current="page">方案对比</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="../../../guides/vs-manual-userspace/" lang="en">English</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <button id="theme-toggle" class="theme-btn" type="button">深色</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <nav class="breadcrumb" aria-label="面包屑导航">
+      <a href="../../">Tailspace</a>
+      <span aria-hidden="true">/</span>
+      <span>方案对比</span>
+    </nav>
+
+    <h1>Tailspace 与手动 tailscaled、systemd --user 对比</h1>
+    <p class="lead">
+      网上大多数无 root 运行 Tailscale 的教程，会让你下载静态压缩包后运行 <code>nohup tailscaled --tun=userspace-networking &amp;</code>，或者写一个 <code>~/.config/systemd/user/</code> 服务。这套做法能撑过一个下午，但想让一台无 root 服务器稳定在线几个月，离不开监管进程。
+    </p>
+
+    <h2>功能对比</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>能力</th>
+            <th>手动 <code>nohup tailscaled</code></th>
+            <th><code>systemd --user</code> 服务</th>
+            <th class="col-accent">Tailspace</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>免 root、<code>sudo</code>、<code>/dev/net/tun</code> 与 <code>CAP_NET_ADMIN</code></td>
+            <td>支持</td>
+            <td>支持</td>
+            <td class="col-accent">支持</td>
+          </tr>
+          <tr>
+            <td>无需 <code>systemd --user</code>（容器、CentOS 7、未开启 linger）</td>
+            <td>支持</td>
+            <td>不支持</td>
+            <td class="col-accent">支持</td>
+          </tr>
+          <tr>
+            <td>崩溃、无响应与控制连接卡住时重启 Tailscale</td>
+            <td>不支持</td>
+            <td>仅在崩溃后重启 Tailscale</td>
+            <td class="col-accent">支持（20 秒探测，崩溃 5 秒后重启 Tailscale）</td>
+          </tr>
+          <tr>
+            <td>服务器重启后免 root 恢复</td>
+            <td>不支持</td>
+            <td>需管理员开启 linger</td>
+            <td class="col-accent">cron 加 0.9 毫秒 shell 检查</td>
+          </tr>
+          <tr>
+            <td>直连与 HTTP 代理切换</td>
+            <td>不支持</td>
+            <td>不支持</td>
+            <td class="col-accent">支持，含退避防抖</td>
+          </tr>
+          <tr>
+            <td>每日更新、等待会话结束与故障回滚</td>
+            <td>不支持</td>
+            <td>不支持</td>
+            <td class="col-accent">支持（最多等 3 天）</td>
+          </tr>
+          <tr>
+            <td>多节点共用 NFS 家目录不冲突</td>
+            <td>需手工分目录</td>
+            <td>需手工分目录</td>
+            <td class="col-accent">内置（<code>state/HOSTNAME/</code>）</td>
+          </tr>
+          <tr>
+            <td>22 端口 Tailscale SSH 加 2222 端口 OpenSSH</td>
+            <td>需手工配置</td>
+            <td>需手工配置</td>
+            <td class="col-accent">内置</td>
+          </tr>
+          <tr>
+            <td>共享主机安全隔离（700 权限、不开放无密码代理）</td>
+            <td>容易配漏</td>
+            <td>容易配漏</td>
+            <td class="col-accent">内置</td>
+          </tr>
+          <tr>
+            <td>多核 Go 线程限制与容器 UDP GSO 关闭</td>
+            <td>不支持</td>
+            <td>不支持</td>
+            <td class="col-accent"><code>GOMAXPROCS=8</code>，容器内关 GSO</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>手动方案在实际使用中的 5 个问题</h2>
+    <ul>
+      <li><strong><code>systemd --user</code> 在容器里跑不起来，在共享机上退出登录就停。</strong> Docker 和 Kubernetes 容器通常根本没有 systemd，运行会报 <code>System has not been booted with systemd</code>；即使在有 systemd 的机器上，没有管理员运行 <code>loginctl enable-linger</code>，退出 SSH 时用户服务就会停止。</li>
+      <li><strong>进程活着不等于网络还通。</strong> 只检查 PID 是否存在，发现不了 LocalAPI 无响应或控制连接卡住。Tailspace 每 20 秒轮询 <code>tailscale status --json</code>，离线时用 <code>tailscale debug ts2021</code> 做真实握手探测。</li>
+      <li><strong>手动升级会断掉当前 SSH 会话。</strong> 在 userspace 模式下，所有连接都活在 <code>tailscaled</code> 进程里，一重启 Tailscale 就会断线。Tailspace 会检测活动 SSH 会话、本地端口转发和 <code>tailscale nc</code> 客户端，最多等待 3 天再更新，并在新版本未通过 2 分钟上线检查和 30 秒稳定期时回滚。</li>
+      <li><strong>开启 <code>--socks5-server=localhost:1055</code> 会把 tailnet 暴露给同机邻居。</strong> Tailscale 的本地 SOCKS5 和 HTTP 代理没有密码，共享服务器上的任何其他用户都能借 <code>127.0.0.1:1055</code> 访问你的个人设备。Tailspace 保持它们关闭，改用 <code>ProxyCommand tailscale nc %h %p</code>。</li>
+      <li><strong>多核机器上线程过多。</strong> 在 124 核 Pod 上不限制线程，<code>tailscaled</code> 会起 57 个线程并每秒扫描开放端口。Tailspace 设 <code>GOMAXPROCS=8</code> 与 <code>TS_PORTLIST=false</code>。</li>
+    </ul>
+
+    <h2>常见问题</h2>
+    <div class="faq-list">
+      <details open>
+        <summary>为什么不直接用 nohup tailscaled --tun=userspace-networking 后台运行？</summary>
+        <div class="faq-body">
+          <p>单纯的 <code>nohup</code> 进程崩溃或服务器重启后无法恢复，代理断了不会切换，不会自动更新，在共享 NFS 家目录的多台节点上还会互相争抢状态文件。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>为什么不用 systemd --user 来托管无 root 的 Tailscale？</summary>
+        <div class="faq-body">
+          <p>容器和 CentOS 7 通常缺少可用的用户级 systemd 总线，而现代发行版若未由 root 开启 linger，用户退出登录即停止服务。Tailspace 只要有 bash 4.2 就能运行。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>我已经在手动跑 tailscaled 了，能直接切到 Tailspace 吗？</summary>
+        <div class="faq-body">
+          <p>可以。停掉你手动启动的 <code>tailscaled</code> 进程，然后运行 Tailspace 的一行安装命令，它会装进 <code>~/.tailspace</code> 并在 <code>~/.local/bin</code> 放入配置好的 <code>tailscale</code> 命令。</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="actions">
+      <a class="btn btn-primary" href="../../">安装 Tailspace</a>
+      <a class="btn" href="../hpc-slurm/">超算与 Slurm 指南</a>
+      <a class="btn" href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.zh-CN.md">完整参考</a>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <span>Tailspace · MIT 许可证 · <a href="https://github.com/ttttonyhe/tailspace">github.com/ttttonyhe/tailspace</a></span>
+      <div class="footer-links">
+        <a href="../../">首页</a>
+        <a href="../../../guides/vs-manual-userspace/" lang="en">English</a>
+        <a href="../../../llms.txt">llms.txt</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../../../app.js"></script>
+</body>
+</html>

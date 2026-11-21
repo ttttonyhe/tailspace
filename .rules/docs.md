@@ -6,6 +6,7 @@ paths:
   - ADVANCED.zh-CN.md
   - examples/**
   - assets/**
+  - site/**
 ---
 
 # Docs and figures
@@ -49,3 +50,9 @@ Every number says where it was measured. The current ones come from a Kubernetes
 
 - It is a complete policy that the admin console must accept as is. `ADVANCED.md` describes three parts of it, so keep them: `tagOwners` for `tag:server`; the `ssh` rule for `tag:server` with `autogroup:nonroot`, because Tailscale SSH can only log in as the account running tailscaled; and `nodeAttrs` with `cache-network-maps`, which needs Tailscale 1.104 or newer. `cmd_status` in `tailspace` looks for `cache-network-maps` to decide whether to print its tip.
 - After an edit, strip the `//` comments and trailing commas and parse the rest as JSON to catch syntax errors.
+
+## Site
+
+- `site/` holds the static GitHub Pages site at `https://ttttonyhe.github.io/tailspace/`. Every indexable English page pairs with a Simplified Chinese page under `site/zh/` via `<link rel="alternate" hreflang="...">` and `site/sitemap.xml`.
+- Keep `assets/` as the single source of truth for SVGs and `social-preview.png`, and `TAILSPACE_VERSION` in `tailspace` as the only version string. `.github/workflows/pages.yml` copies the used assets into `_site/assets/`, replaces `__TAILSPACE_VERSION__`, and builds `llms-full.txt` from `README.md`, `ADVANCED.md`, and `examples/policy.hujson`.
+- Every indexable HTML page carries unique `<title>`, `<meta name="description">`, canonical URL, Open Graph and Twitter metadata, and valid JSON-LD whose headlines, breadcrumbs, and FAQ questions and answers match the visible page verbatim. Keep all quoted constants and measured numbers in step with `tailspace` and the Numbers table above.

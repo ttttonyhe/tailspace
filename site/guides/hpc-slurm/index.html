@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tailscale on HPC &amp; Slurm without root · Tailspace</title>
+  <meta name="description" content="Install Tailscale on HPC login nodes and Slurm clusters without root, sudo, or /dev/net/tun. Covers VS Code Remote-SSH, Jupyter, shared NFS, and CentOS 7.">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/hpc-slurm/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/">
+  <link rel="icon" href="../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="Tailscale on HPC &amp; Slurm without root · Tailspace">
+  <meta property="og:description" content="Reach HPC login nodes and Slurm clusters over SSH, VS Code Remote-SSH, and Jupyter without sudo, /dev/net/tun, or systemd.">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace: Run Tailscale in Rootless Mode">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Tailscale on HPC &amp; Slurm without root · Tailspace">
+  <meta name="twitter:description" content="Install rootless Tailscale on HPC and Slurm clusters with shared NFS support, CentOS 7 compatibility, and VS Code Remote-SSH.">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "Run Tailscale on HPC and Slurm clusters without root",
+        "description": "Install Tailscale on HPC login nodes and Slurm clusters without root, sudo, or /dev/net/tun. Covers VS Code Remote-SSH, Jupyter, shared NFS, and CentOS 7.",
+        "url": "https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/",
+        "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/",
+        "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+        "datePublished": "2026-11-20",
+        "dateModified": "2026-11-20",
+        "author": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "publisher": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "about": [
+          { "@type": "Thing", "name": "Tailscale" },
+          { "@type": "Thing", "name": "High-performance computing" },
+          { "@type": "Thing", "name": "Slurm Workload Manager" }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Tailspace", "item": "https://ttttonyhe.github.io/tailspace/" },
+          { "@type": "ListItem", "position": 2, "name": "HPC & Slurm", "item": "https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/" }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Can multiple HPC nodes share the same NFS home directory with Tailspace?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Each server keeps its own state, lock, and log under ~/.tailspace/state/HOSTNAME/, so multiple nodes sharing an NFS home directory share one installation while joining your tailnet as separate devices."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What if my HPC home directory is mounted noexec or breaks flock?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Set TAILSPACE_PREFIX=/scratch/$USER/tailspace, or another short path on a local disk, during install. Later tailspace commands find that location on their own."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Tailspace work on older HPC clusters running CentOS 7?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Tailspace supports Linux 3.2 and newer, bash 4.2, and util-linux 2.23, and CI runs the unit, watcher, and supervisor tests on bash 4.2."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../../">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="28" height="28">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="../../">Home</a>
+        <a href="./" aria-current="page">HPC &amp; Slurm</a>
+        <a href="../kubernetes-docker/">Kubernetes</a>
+        <a href="../proxy-failover/">Proxies</a>
+        <a href="../vs-manual-userspace/">Comparison</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="../../zh/guides/hpc-slurm/" lang="zh-CN">简体中文</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <button id="theme-toggle" class="theme-btn" type="button">dark</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="../../">Tailspace</a>
+      <span aria-hidden="true">/</span>
+      <span>HPC &amp; Slurm</span>
+    </nav>
+
+    <h1>Run Tailscale on HPC and Slurm clusters without root</h1>
+    <p class="lead">
+      University and lab clusters rarely give users <code>sudo</code>, <code>/dev/net/tun</code>, or <code>systemd --user</code> lingering, and many still run CentOS 7 or RHEL with shared NFS home directories. Tailspace installs <code>tailscaled</code> in userspace networking mode under your account, supervises it across crashes and reboots, and lets you reach SSH, VS Code Remote-SSH, and Jupyter over your tailnet.
+    </p>
+
+    <div class="callout">
+      <p><strong>Check your cluster policy before installing.</strong> Tailspace keeps a background process running, and Tailscale SSH skips the cluster's own two-factor check. Some HPC centers forbid persistent daemons on login nodes or external tunnels. Verify your cluster's rules first.</p>
+    </div>
+
+    <h2>Install on a login node or Slurm node</h2>
+    <p>For an interactive login on a cluster node, run the default installer:</p>
+    <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</code></pre>
+    <p>For scripted setup or transient Slurm compute nodes, save a reusable auth key tagged <code>tag:server</code> in a <code>0600</code> file and pass it through <code>TS_AUTHKEY</code> so other users on the cluster can't see it in <code>/proc/*/cmdline</code>. Make the key ephemeral too if you want Slurm nodes removed when jobs finish:</p>
+    <pre><code>chmod 600 ~/.ts-key
+curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | \
+  TS_AUTHKEY=file:$HOME/.ts-key bash -s -- install --hostname hpc-login-01</code></pre>
+    <p>Tagged devices have key expiry off by default in Tailscale. Copy <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a> into your tailnet policy so tagged cluster nodes accept Tailscale SSH from your devices without being able to open connections back to your laptop.</p>
+
+    <h2>VS Code Remote-SSH, Cursor, and Jupyter without a VPN</h2>
+    <p>Tailspace turns on Tailscale SSH on port 22. If the node also runs OpenSSH and none of your processes holds <code>127.0.0.1:2222</code>, Tailspace makes OpenSSH reachable on port 2222:</p>
+    <ul>
+      <li><strong>Terminal, Cursor, and VS Code Remote-SSH on port 22.</strong> Connect to <code>you@hpc-login-01</code> using your Tailscale identity, with no SSH key setup or jump host. Change <code>"check"</code> to <code>"accept"</code> in your policy's <code>ssh</code> rule to skip Tailscale's 12-hour browser re-check.</li>
+      <li><strong>Existing SSH keys on port 2222.</strong> Point your laptop's <code>~/.ssh/config</code> at port 2222 when you want OpenSSH agent forwarding, <code>scp</code>, or <code>rsync</code> with your usual keys.</li>
+      <li><strong>JupyterLab and TensorBoard.</strong> Every other port on the node's tailnet IP maps to <code>127.0.0.1</code>. Start Jupyter on port 8888 or TensorBoard on port 6006 and open <code>http://hpc-login-01:8888</code> or <code>http://hpc-login-01:6006</code> without <code>ssh -L</code> tunnels.</li>
+    </ul>
+
+    <h2>Shared NFS home directories across cluster nodes</h2>
+    <p>Most HPC clusters mount one NFS <code>$HOME</code> across every login and compute node. Running a single-state <code>tailscaled</code> script on two nodes corrupts the state file or makes nodes fight over one device identity.</p>
+    <p>Tailspace keeps each host's runtime data under <code>~/.tailspace/state/HOSTNAME/</code> while sharing <code>bin/</code>, <code>config</code>, and the shell check across nodes:</p>
+    <pre><code>~/.tailspace/
+  bin/                  shared tailscale and tailscaled binaries
+  config                shared settings
+  state/login-01/       state, lock, and log for login-01
+  state/login-02/       state, lock, and log for login-02</code></pre>
+    <p>Run <code>tailspace install</code> once on each node you want on your tailnet. Running <code>tailspace uninstall</code> on one node removes only that host's state directory and keeps the shared binaries for the other nodes.</p>
+
+    <h2>When $HOME is mounted noexec or blocks file locks</h2>
+    <p>Some clusters mount <code>$HOME</code> with <code>noexec</code> or use network filesystems where <code>flock</code> fails or Unix socket paths grow too long. Install Tailspace to a local disk or scratch directory with <code>TAILSPACE_PREFIX</code>:</p>
+    <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | \
+  TAILSPACE_PREFIX=/scratch/$USER/tailspace bash</code></pre>
+    <p>Later <code>tailspace</code> and <code>tailscale</code> commands find the custom prefix on their own.</p>
+
+    <h2>CentOS 7 compatibility and shared-node limits</h2>
+    <ul>
+      <li><strong>Older enterprise kernels.</strong> Runs on Linux 3.2+, <code>bash</code> 4.2+, and <code>util-linux</code> 2.23+. CI tests every commit against bash 5 and bash 4.2 built from source.</li>
+      <li><strong>Low footprint on high-core nodes.</strong> Sets <code>GOMAXPROCS=8</code> when more than 8 cores are available, which cut a 124-core pod from 57 Go threads to 14 and probe CPU time from 57 ms to 15 ms. Also sets <code>TS_PORTLIST=false</code> so Tailscale doesn't scan open ports every second.</li>
+      <li><strong>Multi-user isolation.</strong> Tailspace creates <code>~/.tailspace</code> with mode 700, tracks processes through your own descriptors in <code>/proc</code>, and leaves Tailscale's unauthenticated SOCKS5 and HTTP proxies off so other cluster users can't use your tailnet.</li>
+    </ul>
+
+    <h2>Frequently asked questions</h2>
+    <div class="faq-list">
+      <details open>
+        <summary>Can multiple HPC nodes share the same NFS home directory with Tailspace?</summary>
+        <div class="faq-body">
+          <p>Yes. Each server keeps its own state, lock, and log under <code>~/.tailspace/state/HOSTNAME/</code>, so multiple nodes sharing an NFS home directory share one installation while joining your tailnet as separate devices.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>What if my HPC home directory is mounted noexec or breaks flock?</summary>
+        <div class="faq-body">
+          <p>Set <code>TAILSPACE_PREFIX=/scratch/$USER/tailspace</code>, or another short path on a local disk, during install. Later <code>tailspace</code> commands find that location on their own.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Does Tailspace work on older HPC clusters running CentOS 7?</summary>
+        <div class="faq-body">
+          <p>Yes. Tailspace supports Linux 3.2 and newer, bash 4.2, and util-linux 2.23, and CI runs the unit, watcher, and supervisor tests on bash 4.2.</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="actions">
+      <a class="btn btn-primary" href="../../">Back to overview</a>
+      <a class="btn" href="../kubernetes-docker/">Next: Kubernetes and Docker guide</a>
+      <a class="btn" href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.md">Full reference</a>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <span>Tailspace · MIT license · <a href="https://github.com/ttttonyhe/tailspace">github.com/ttttonyhe/tailspace</a></span>
+      <div class="footer-links">
+        <a href="../../">Home</a>
+        <a href="../../zh/guides/hpc-slurm/" lang="zh-CN">简体中文</a>
+        <a href="../../llms.txt">llms.txt</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../../app.js"></script>
+</body>
+</html>

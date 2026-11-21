@@ -1,0 +1,90 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "assets/**"
+      - "tailspace"
+      - "README.md"
+      - "ADVANCED.md"
+      - "examples/policy.hujson"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Assemble static site
+        run: |
+          rm -rf _site
+          mkdir -p _site/assets
+          cp -R site/. _site/
+          for f in assets/*.svg assets/social-preview.png; do
+            [ "$(basename "$f")" = "social-preview.svg" ] && continue
+            cp "$f" _site/assets/
+          done
+          touch _site/.nojekyll
+
+          version=$(sed -n 's/^TAILSPACE_VERSION="\([^"]*\)"/\1/p' tailspace)
+          if [ -z "$version" ]; then
+            echo "Could not read TAILSPACE_VERSION from tailspace" >&2
+            exit 1
+          fi
+          find _site -type f \( -name '*.html' -o -name 'llms.txt' \) -exec sed -i "s/__TAILSPACE_VERSION__/${version}/g" {} +
+
+          python3 - <<'PY' > _site/llms-full.txt
+          import re
+          from pathlib import Path
+
+          def clean_md(text):
+              text = re.sub(r"<picture>.*?</picture>\s*", "", text, flags=re.S)
+              text = re.sub(r"^# .+\n+", "", text, count=1)
+              text = re.sub(r"^(#+ )", r"#\1", text, flags=re.M)
+              text = text.replace("(ADVANCED.md)", "(https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.md)")
+              text = text.replace("(README.md)", "(https://github.com/ttttonyhe/tailspace/blob/main/README.md)")
+              text = text.replace("(README.zh-CN.md)", "(https://github.com/ttttonyhe/tailspace/blob/main/README.zh-CN.md)")
+              text = text.replace("(ADVANCED.zh-CN.md)", "(https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.zh-CN.md)")
+              text = text.replace("(LICENSE)", "(https://github.com/ttttonyhe/tailspace/blob/main/LICENSE)")
+              text = text.replace("(examples/policy.hujson)", "(https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson)")
+              return text.strip()
+
+          readme = clean_md(Path("README.md").read_text(encoding="utf-8"))
+          advanced = clean_md(Path("ADVANCED.md").read_text(encoding="utf-8"))
+          policy = Path("examples/policy.hujson").read_text(encoding="utf-8").strip()
+
+          print("# Tailspace documentation\n")
+          print("Source: https://github.com/ttttonyhe/tailspace")
+          print("Website: https://ttttonyhe.github.io/tailspace/\n")
+          print("## Overview\n")
+          print(readme)
+          print("\n## In depth\n")
+          print(advanced)
+          print("\n## Example tailnet policy\n\n```jsonc")
+          print(policy)
+          print("```")
+          PY
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

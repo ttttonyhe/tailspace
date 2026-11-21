@@ -7,9 +7,9 @@
 
 **Run Tailscale in Rootless Mode**
 
-Installing [Tailscale](https://tailscale.com) on a remote server requires you to have root (admin) access, which is something you usually don't have if you are on a shared server like an HPC login node or a Kubernetes pod. Tailspace runs and maintains Tailscale connection in [userspace mode](https://tailscale.com/docs/concepts/userspace-networking) without requiring root access, so you can SSH into any server from any of your own devices anywhere.
+Installing [Tailscale](https://tailscale.com) on a remote Linux server normally requires root (admin) access via `sudo`, `/dev/net/tun`, and `systemd`. On a shared server such as an HPC login node, a Slurm cluster, a Kubernetes pod, or an unprivileged Docker container, you usually have none of those. Tailspace runs `tailscaled` in [userspace networking mode](https://tailscale.com/docs/concepts/userspace-networking) with `--tun=userspace-networking` inside your home directory without root, so you can reach the server with SSH, VS Code Remote-SSH, or Jupyter from any device on your tailnet.
 
-English · [简体中文](README.zh-CN.md)
+English · [简体中文](README.zh-CN.md) · [Guides and docs](https://ttttonyhe.github.io/tailspace/)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg">
@@ -32,13 +32,14 @@ Tailscale expires device keys after 180 days by default. To keep the server conn
 
 ## What it does
 
-Without root, Tailscale can't run as a system service, so Tailspace looks after it for you:
+Without root or `systemd`, Tailscale can't run as a system service, so Tailspace sets it up in userspace mode and looks after it for you:
 
-- Restarts Tailscale if it crashes.
+- Turns on Tailscale SSH on port 22, forwards OpenSSH on port 2222 when the server runs OpenSSH, and lets you reach local ports such as Jupyter or TensorBoard over your tailnet.
+- Restarts `tailscaled` if it crashes, hangs, or gets stuck offline while the network works.
 - Starts Tailscale again after the server reboots, right away if the server has cron, or else the next time you log in.
 - Switches between a direct connection and your HTTP proxy, if the server has one, whenever either goes down.
 - Updates Tailscale daily, waiting up to 3 days for your sessions to end, and rolls back if a new version doesn't work.
-- Keeps other users on a shared server off your tailnet.
+- Keeps other users on a shared server off your tailnet, without opening unauthenticated SOCKS5 or HTTP proxies.
 - Stops and tells you why when it needs your help, instead of retrying forever.
 
 It's light, too:
@@ -58,6 +59,6 @@ tailspace self-update # update Tailspace itself
 tailspace uninstall   # log the server out and remove everything
 ```
 
-See [ADVANCED.md](ADVANCED.md) for auth keys, proxies, settings, what works differently without root, and how it all works.
+See [ADVANCED.md](ADVANCED.md) for auth keys, proxies, settings, and reference details. Guides for [HPC and Slurm](https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/), [Kubernetes and Docker](https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/), [HTTP proxy failover](https://ttttonyhe.github.io/tailspace/guides/proxy-failover/), and [comparing Tailspace with manual userspace setups](https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/) live on the [project site](https://ttttonyhe.github.io/tailspace/).
 
 Tailspace is a single bash script under the [MIT license](LICENSE), and isn't affiliated with Tailscale Inc.

@@ -1,8 +1,8 @@
 # Tailspace in depth
 
-The [README](README.md) covers the usual install. This page covers everything else: auth keys, SSH, how Tailspace keeps your server online, commands and settings, proxies and relays, reaching your other devices from the server, and reference details.
+The [README](README.md) covers the usual install. This page covers everything else: auth keys, SSH, how Tailspace keeps your server online, commands and settings, proxies and relays, reaching your other devices from the server, common environments, how Tailspace compares to manual userspace setups, and reference details.
 
-English · [简体中文](ADVANCED.zh-CN.md)
+English · [简体中文](ADVANCED.zh-CN.md) · [Guides and docs](https://ttttonyhe.github.io/tailspace/)
 
 ## Installing with an auth key
 
@@ -24,7 +24,9 @@ Tailspace turns on Tailscale SSH, so you log in with your Tailscale identity ins
 
 Tailscale's default policy runs Tailscale SSH in check mode, which asks you to log in again in the browser every 12 hours. To skip that, change `"check"` to `"accept"` in the policy's `ssh` rule.
 
-Every other port goes straight to the server. A Jupyter notebook listening on port 8888, for example, is at `lab-07:8888`.
+Every other port goes straight to the server. A Jupyter notebook on port 8888 or TensorBoard on port 6006 works at `lab-07:8888` or `lab-07:6006`, without `ssh -L` port forwarding or `kubectl port-forward`.
+
+VS Code Remote-SSH and Cursor connect to `you@lab-07` on port 22 with Tailscale SSH, or on port 2222 if the server runs OpenSSH and you want your existing SSH keys and `~/.ssh/config`. You don't need a VPN, a bastion jump host, or VS Code Tunnel.
 
 Restarting Tailscale ends every session over Tailscale: your SSH sessions, connections to programs on the server such as that notebook, and connections the server opens to your other devices. Tailspace puts off the restarts that can wait, such as updates, while it sees sessions open, for 3 days at most, as [Updates](#updates) explains. Still, run long jobs in tmux or screen, so a dropped connection never costs you work.
 
@@ -164,6 +166,27 @@ Host lab-01
 Then `ssh lab-01` logs in with your usual keys to the OpenSSH that another Tailspace server makes available on port 2222, and `scp`, `rsync` and `git` reach it by name too. Programs that can't go through `tailscale nc`, such as curl or a browser, can't reach your tailnet. MagicDNS names like lab-01 resolve only inside Tailscale, and `ping` doesn't reach your devices, though `tailscale ping lab-01` does. Tailscale also has SOCKS5 and HTTP proxies for such programs, but Tailspace leaves them off. They have no password, so on a shared server every other user could use them to reach your devices.
 
 If the server is tagged, the example policy blocks connections like these, because it keeps tagged servers from connecting to your other devices. To let your servers reach each other, uncomment the line in the policy that allows `tag:server` to reach `tag:server`.
+
+## Common environments
+
+- **HPC and Slurm clusters.** Runs without `sudo`, `/dev/net/tun`, or `systemd --user` lingering, down to Linux 3.2 and bash 4.2, including CentOS 7, RHEL, and Rocky Linux. Shared NFS home directories keep per-host state under `state/HOSTNAME/`, and `TAILSPACE_PREFIX` handles `noexec` home directories. For transient Slurm nodes whose hostnames change, install with a reusable auth key (and ephemeral if you want nodes removed once jobs end). See the [HPC and Slurm guide](https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/).
+- **Kubernetes pods and unprivileged Docker containers.** Needs no `CAP_NET_ADMIN`, `/dev/net/tun`, `systemd`, or `cron`, and turns UDP GSO off in containers. See the [Kubernetes and Docker guide](https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/).
+- **Shared Linux servers behind NAT, firewalls, or HTTP proxies.** Works without open inbound ports or a jump host, switches between the direct path and a saved `http://` proxy on outage, and keeps other accounts on the machine off your tailnet. See the [HTTP proxy failover guide](https://ttttonyhe.github.io/tailspace/guides/proxy-failover/).
+
+## Why not run tailscaled by hand?
+
+Standard Tailscale installs fail without root with `failed to open /dev/net/tun` or missing `CAP_NET_ADMIN`, and `systemctl --user` fails in containers with `System has not been booted with systemd` or stops at logout without lingering. Most rootless guides tell you to run `nohup tailscaled --tun=userspace-networking &` or write a `systemd --user` unit. Tailspace handles what those setups leave out:
+
+| Capability | Manual `nohup tailscaled` | `systemd --user` unit | Tailspace |
+| --- | --- | --- | --- |
+| No root, `sudo`, `/dev/net/tun`, or `CAP_NET_ADMIN` | Yes | Yes | Yes |
+| Works without `systemd --user` (containers, CentOS 7, no linger) | Yes | No | Yes |
+| Restarts on crash, hang, or stuck control connection | No | Crash only | Yes |
+| Recovers after reboot without root | No | Needs linger | Cron + shell check |
+| Direct and HTTP proxy failover | No | No | Yes |
+| Daily updates with session wait and rollback | No | No | Yes |
+| Shared NFS `$HOME` across cluster nodes | Manual per host | Manual per host | Built in (`state/HOSTNAME/`) |
+| Multi-user isolation and high-core Go tuning | Manual | Manual | Built in (`GOMAXPROCS=8`, no open proxy) |
 
 ## Reference
 

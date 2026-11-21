@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tailscale in Kubernetes &amp; Docker without root · Tailspace</title>
+  <meta name="description" content="Run Tailscale and Tailscale SSH in Kubernetes pods and unprivileged Docker containers without root, CAP_NET_ADMIN, /dev/net/tun, or systemd.">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/kubernetes-docker/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/">
+  <link rel="icon" href="../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="Tailscale in Kubernetes &amp; Docker without root · Tailspace">
+  <meta property="og:description" content="Run rootless Tailscale in Kubernetes pods and unprivileged Docker containers without CAP_NET_ADMIN, /dev/net/tun, or systemd.">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace: Run Tailscale in Rootless Mode">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Tailscale in Kubernetes &amp; Docker without root · Tailspace">
+  <meta name="twitter:description" content="No CAP_NET_ADMIN, no /dev/net/tun, no systemd. Run supervised userspace Tailscale inside Kubernetes pods and containers.">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "Tailscale in Kubernetes pods and unprivileged Docker containers",
+        "description": "Run Tailscale and Tailscale SSH in Kubernetes pods and unprivileged Docker containers without root, CAP_NET_ADMIN, /dev/net/tun, or systemd.",
+        "url": "https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/",
+        "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/",
+        "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+        "datePublished": "2026-11-20",
+        "dateModified": "2026-11-20",
+        "author": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "publisher": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "about": [
+          { "@type": "Thing", "name": "Tailscale" },
+          { "@type": "Thing", "name": "Kubernetes" },
+          { "@type": "Thing", "name": "Docker" }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Tailspace", "item": "https://ttttonyhe.github.io/tailspace/" },
+          { "@type": "ListItem", "position": 2, "name": "Kubernetes & Docker", "item": "https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/" }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Does Tailspace need CAP_NET_ADMIN or /dev/net/tun in Kubernetes or Docker?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Tailspace launches tailscaled --tun=userspace-networking, so it never accesses /dev/net/tun and needs no Linux capabilities or privileged container settings."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does Tailspace recover when a container has no systemd or cron?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Tailspace adds a 0.9 ms background shell check to your startup files, such as ~/.bashrc and ~/.zshrc. After a pod restarts, the next kubectl exec or shell login starts the supervisor and tailscaled again."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What if a Kubernetes Deployment assigns a new pod hostname on recreate?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Tailspace names each state directory after the container's OS hostname under state/HOSTNAME/, so a pod recreated with a new hostname counts as a new server. Use a StatefulSet or fixed spec.hostname to keep that state directory across recreates, or run tailspace install again with a reusable auth key."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../../">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="28" height="28">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="../../">Home</a>
+        <a href="../hpc-slurm/">HPC &amp; Slurm</a>
+        <a href="./" aria-current="page">Kubernetes</a>
+        <a href="../proxy-failover/">Proxies</a>
+        <a href="../vs-manual-userspace/">Comparison</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="../../zh/guides/kubernetes-docker/" lang="zh-CN">简体中文</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <button id="theme-toggle" class="theme-btn" type="button">dark</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="../../">Tailspace</a>
+      <span aria-hidden="true">/</span>
+      <span>Kubernetes &amp; Docker</span>
+    </nav>
+
+    <h1>Tailscale in Kubernetes pods and unprivileged Docker containers</h1>
+    <p class="lead">
+      Locked-down GPU pods, managed Kubernetes dev environments, and unprivileged Docker containers strip out <code>CAP_NET_ADMIN</code>, hide <code>/dev/net/tun</code>, and run without <code>systemd</code> or <code>cron</code>. Tailspace installs into your home directory with one command and gives you Tailscale SSH, VS Code Remote-SSH, and localhost port access without changing pod specs or container privileges.
+    </p>
+
+    <h2>Zero container privileges required</h2>
+    <p>Standard Tailscale container guides ask for <code>CAP_NET_ADMIN</code> and a host mount for <code>/dev/net/tun</code>. When you don't control the cluster SecurityContext, Tailspace skips kernel networking by running <code>tailscaled --tun=userspace-networking</code>:</p>
+    <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</code></pre>
+    <p>For non-interactive pod startup scripts or recreated pods, mount a reusable auth key as a <code>0600</code> Kubernetes Secret and pass it through <code>TS_AUTHKEY</code>:</p>
+    <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | \
+  TS_AUTHKEY=file:/var/run/secrets/tailscale/authkey bash -s -- install --hostname gpu-pod-01</code></pre>
+
+    <h2>How Tailspace handles container environments</h2>
+    <ul>
+      <li><strong>UDP GSO off in containers.</strong> On some container virtual NICs, UDP GSO batches packets in a way that cripples throughput; see <a href="https://github.com/tailscale/tailscale/issues/20858">tailscale#20858</a>. Tailspace detects container cgroup namespaces and turns UDP GSO off.</li>
+      <li><strong>No systemd, no init, no cron required.</strong> Containers without an init process leave zombies un-reaped, so Tailspace reads process state in <code>/proc</code> and treats zombies as gone. It also skips adding a crontab entry when no cron daemon runs on the container's own root filesystem, even under <code>hostPID: true</code>.</li>
+      <li><strong>Safe with shared host PID namespaces.</strong> Process detection never runs <code>ps</code> or <code>pgrep</code>. The supervisor identifies its own <code>tailscaled</code> and lock holders through <code>/proc/PID/fd</code> and <code>--statedir</code>, so other pods on the same node are never touched.</li>
+      <li><strong>Pod restart detection.</strong> Tailspace records each container's root overlay identity alongside the kernel boot ID. If a pod restarts with the same hostname and persistent <code>$HOME</code> volume, Tailspace treats it as a reboot and clears earlier give-ups on your next <code>kubectl exec</code> shell.</li>
+      <li><strong>Capped Go threads on large worker nodes.</strong> A container on a 124-core Kubernetes worker normally inherits 124 usable CPUs. Tailspace caps <code>GOMAXPROCS=8</code>, cutting Tailscale from 57 threads to 14 and probe CPU time from 57 ms to 15 ms.</li>
+    </ul>
+
+    <h2>Skip kubectl port-forward for Jupyter and dev servers</h2>
+    <p>In userspace mode, Tailscale forwards every port on the pod's tailnet IP to <code>127.0.0.1</code> inside the pod, apart from port 22 for Tailscale SSH and port 2222 when OpenSSH runs. Start Jupyter on 8888, TensorBoard on 6006, or a local API on 8000, and open <code>http://gpu-pod-01:8888</code> from your laptop browser.</p>
+
+    <h2>Measured footprint on a real Kubernetes pod</h2>
+    <p>Measured on a Kubernetes pod with 124 usable cores and 1,435 visible processes running Tailscale 1.104.7:</p>
+    <figure class="figure">
+      <picture>
+        <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/metrics-dark.svg">
+        <img src="../../assets/metrics-light.svg"
+             alt="Measured on a Kubernetes pod running Tailscale 1.104.7: 0.9 milliseconds added to each new shell, and while idle, 0.14 percent of one CPU core and 30 megabytes of memory."
+             width="880" height="112">
+      </picture>
+    </figure>
+    <p>Userspace networking moved about 10 Gbit/s over one connection to the pod's own tailnet IPv4 address, a test that leaves out WireGuard and the network.</p>
+
+    <h2>Frequently asked questions</h2>
+    <div class="faq-list">
+      <details open>
+        <summary>Does Tailspace need CAP_NET_ADMIN or /dev/net/tun in Kubernetes or Docker?</summary>
+        <div class="faq-body">
+          <p>No. Tailspace launches <code>tailscaled --tun=userspace-networking</code>, so it never accesses <code>/dev/net/tun</code> and needs no Linux capabilities or privileged container settings.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>How does Tailspace recover when a container has no systemd or cron?</summary>
+        <div class="faq-body">
+          <p>Tailspace adds a 0.9 ms background shell check to your startup files, such as <code>~/.bashrc</code> and <code>~/.zshrc</code>. After a pod restarts, the next <code>kubectl exec</code> or shell login starts the supervisor and <code>tailscaled</code> again.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>What if a Kubernetes Deployment assigns a new pod hostname on recreate?</summary>
+        <div class="faq-body">
+          <p>Tailspace names each state directory after the container's OS hostname under <code>state/HOSTNAME/</code>, so a pod recreated with a new hostname counts as a new server. Use a StatefulSet or fixed <code>spec.hostname</code> to keep that state directory across recreates, or run <code>tailspace install</code> again with a reusable auth key.</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="actions">
+      <a class="btn btn-primary" href="../../">Back to overview</a>
+      <a class="btn" href="../proxy-failover/">Next: HTTP proxy failover guide</a>
+      <a class="btn" href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.md">Full reference</a>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <span>Tailspace · MIT license · <a href="https://github.com/ttttonyhe/tailspace">github.com/ttttonyhe/tailspace</a></span>
+      <div class="footer-links">
+        <a href="../../">Home</a>
+        <a href="../../zh/guides/kubernetes-docker/" lang="zh-CN">简体中文</a>
+        <a href="../../llms.txt">llms.txt</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../../app.js"></script>
+</body>
+</html>

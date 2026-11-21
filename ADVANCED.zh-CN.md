@@ -1,8 +1,8 @@
 # Tailspace 详解
 
-[README](README.zh-CN.md) 介绍了常规安装。本文介绍其余的一切：auth key、SSH、Tailspace 如何让服务器保持在线、命令与设置、代理与中继、从服务器连接你的其他设备，以及参考信息。
+[README](README.zh-CN.md) 介绍了常规安装。本文介绍其余的一切：auth key、SSH、Tailspace 如何让服务器保持在线、命令与设置、代理与中继、从服务器连接你的其他设备、常见运行环境、与手动 userspace 方案的对比，以及参考信息。
 
-[English](ADVANCED.md) · 简体中文
+[English](ADVANCED.md) · 简体中文 · [指南与文档](https://ttttonyhe.github.io/tailspace/zh/)
 
 ## 用 auth key 安装
 
@@ -24,7 +24,9 @@ Tailspace 会开启 Tailscale SSH，你用 Tailscale 身份登录，不需要 SS
 
 Tailscale 的默认策略让 Tailscale SSH 以 check 模式运行，每 12 小时要你在浏览器里重新登录一次。不想这样，就把策略 `ssh` 规则里的 `"check"` 改成 `"accept"`。
 
-其他端口都直通服务器。比如服务器上监听 8888 端口的 Jupyter Notebook，访问 `lab-07:8888` 就能打开。
+其他端口都直通服务器。比如服务器上监听 8888 端口的 Jupyter Notebook 或 6006 端口的 TensorBoard，访问 `lab-07:8888` 或 `lab-07:6006` 就能打开，不需要 `ssh -L` 端口转发或 `kubectl port-forward`。
+
+VS Code Remote-SSH 和 Cursor 可以通过 22 端口的 Tailscale SSH 连到 `you@lab-07`，如果服务器运行了 OpenSSH，也可以走 2222 端口继续用你现有的 SSH 密钥和 `~/.ssh/config`，不用开 VPN、跳板机或 VS Code Tunnel。
 
 重启 Tailscale 会断开所有经 Tailscale 的会话，包括你的 SSH 会话、访问那个 Notebook 这类服务器上程序的连接，以及服务器连向你其他设备的连接。能等的 Tailscale 重启，比如更新，Tailspace 在看到有会话开着时会推迟，最多推迟 3 天，见[更新](#更新)。不过长时间运行的任务还是放进 tmux 或 screen 里，这样断线也不会让你丢掉工作。
 
@@ -164,6 +166,27 @@ Host lab-01
 之后 `ssh lab-01` 就会用你平时的密钥，登录另一台 Tailspace 服务器在 2222 端口上提供的 OpenSSH，`scp`、`rsync` 和 `git` 也都能按名字连到它。不能经由 `tailscale nc` 的程序，比如 curl 或浏览器，访问不到你的 tailnet。lab-01 这样的 MagicDNS 名字只在 Tailscale 内部解析，`ping` 也连不到你的设备，不过 `tailscale ping lab-01` 可以。Tailscale 也为这类程序提供 SOCKS5 和 HTTP 代理，但 Tailspace 不开启它们。它们没有密码，一旦开启，共享服务器上的其他每个用户都能借它们访问你的设备。
 
 如果服务器带有标签，示例策略会拦下这类连接，因为它禁止带标签的服务器连接你的其他设备。要让服务器之间互相访问，取消策略里允许 `tag:server` 访问 `tag:server` 那一行的注释。
+
+## 常见运行环境
+
+- **HPC 与 Slurm 集群。** 不需要 `sudo`、`/dev/net/tun` 或 `systemd --user` 常驻权限，最低支持 Linux 3.2 和 bash 4.2，包括 CentOS 7、RHEL 和 Rocky Linux。共用 NFS 家目录时按主机名存放在 `state/HOSTNAME/`，遇到 `noexec` 家目录可用 `TAILSPACE_PREFIX`。主机名会变化的 Slurm 临时节点应使用可重复的 auth key（如需作业结束后自动下线，再勾选 ephemeral）。见[超算与 Slurm 指南](https://ttttonyhe.github.io/tailspace/zh/guides/hpc-slurm/)。
+- **Kubernetes Pod 与无特权 Docker 容器。** 不需要 `CAP_NET_ADMIN`、`/dev/net/tun`、`systemd` 或 `cron`，并在容器内关闭 UDP GSO。见[Kubernetes 与容器指南](https://ttttonyhe.github.io/tailspace/zh/guides/kubernetes-docker/)。
+- **NAT、防火墙或 HTTP 代理后的共享 Linux 服务器。** 不需要公网端口或跳板机，在直连路径与已保存的 `http://` 代理之间切换，并让同机其他账号用不了你的 tailnet。见[HTTP 代理切换指南](https://ttttonyhe.github.io/tailspace/zh/guides/proxy-failover/)。
+
+## 为什么不手动运行 tailscaled？
+
+没有 root 时，常规 Tailscale 安装会报 `failed to open /dev/net/tun` 或缺少 `CAP_NET_ADMIN`；容器里用 `systemctl --user` 会报 `System has not been booted with systemd`，而在未开启 linger 的共享服务器上退出登录就会停掉服务。网上大多数教程会让你跑 `nohup tailscaled --tun=userspace-networking &` 或写一个 `systemd --user` 服务，Tailspace 补齐了这些方案缺的部分：
+
+| 能力 | 手动 `nohup tailscaled` | `systemd --user` 服务 | Tailspace |
+| --- | --- | --- | --- |
+| 免 root、`sudo`、`/dev/net/tun` 与 `CAP_NET_ADMIN` | 支持 | 支持 | 支持 |
+| 无需 `systemd --user`（容器、CentOS 7、未开启 linger） | 支持 | 不支持 | 支持 |
+| 崩溃、无响应或控制连接卡住时重启 Tailscale | 不支持 | 仅在崩溃后重启 Tailscale | 支持 |
+| 服务器重启后免 root 恢复 | 不支持 | 依赖 linger | cron 加 shell 检查 |
+| 直连路径与 HTTP 代理切换 | 不支持 | 不支持 | 支持 |
+| 每日更新、等待会话结束与回滚 | 不支持 | 不支持 | 支持 |
+| 多节点共用 NFS 家目录 | 需逐台手工隔离 | 需逐台手工隔离 | 内置（`state/HOSTNAME/`） |
+| 共享主机隔离与多核 Go 参数调优 | 需手工配置 | 需手工配置 | 内置（`GOMAXPROCS=8`，不开放本地代理） |
 
 ## 参考
 

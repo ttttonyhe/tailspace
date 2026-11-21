@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tailscale HTTP 代理切换与 DERP · Tailspace</title>
+  <meta name="description" content="Tailspace 在直连路径与 HTTP 代理路径之间切换，规避 ML-KEM TLS 丢包，并配合自建 DERP 或 Peer Relay 加速中继。">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/zh/guides/proxy-failover/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/proxy-failover/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/proxy-failover/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/proxy-failover/">
+  <link rel="icon" href="../../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="Tailscale HTTP 代理切换与 DERP · Tailspace">
+  <meta property="og:description" content="直连与 HTTP 代理故障切换、TLS ML-KEM 丢包规避、自建 DERP 服务器与 Peer Relay 指南。">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/zh/guides/proxy-failover/">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace：非 Root 身份运行 Tailscale">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Tailscale HTTP 代理切换与 DERP · Tailspace">
+  <meta name="twitter:description" content="让无 root 的 Tailscale 在不稳定的 HTTP 代理和防火墙环境下保持在线。">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../../styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "inLanguage": "zh-CN",
+        "headline": "Tailscale HTTP 代理与直连切换",
+        "description": "Tailspace 在直连路径与 HTTP 代理路径之间切换，规避 ML-KEM TLS 丢包，并配合自建 DERP 或 Peer Relay 加速中继。",
+        "url": "https://ttttonyhe.github.io/tailspace/zh/guides/proxy-failover/",
+        "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/zh/guides/proxy-failover/",
+        "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+        "datePublished": "2026-11-20",
+        "dateModified": "2026-11-20",
+        "author": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "publisher": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "about": [
+          { "@type": "Thing", "name": "Tailscale" },
+          { "@type": "Thing", "name": "HTTP proxy" },
+          { "@type": "Thing", "name": "DERP relay" }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Tailspace", "item": "https://ttttonyhe.github.io/tailspace/zh/" },
+          { "@type": "ListItem", "position": 2, "name": "HTTP 代理与切换", "item": "https://ttttonyhe.github.io/tailspace/zh/guides/proxy-failover/" }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "为什么 Tailscale 自己不会在代理和直连之间切换？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "tailscaled 只在启动时读取一次 https_proxy。Tailspace 用 tailscale debug ts2021 探测直连和代理两条路径，当使用中的路径失效时带着可用环境重启 Tailscale。"
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Tailscale 支持通过 ALL_PROXY 使用 SOCKS5 代理吗？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "不支持。Tailscale 会忽略 ALL_PROXY，并把所有代理当作 HTTP 代理。请使用 Clash 或 Mihomo 等工具的 HTTP 混合端口，以 http://HOST:PORT 传给 Tailspace。"
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "从代理切回直连时会断开我正在用的 SSH 会话吗？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "不会。监管进程会检查 SSH 会话、转发到 127.0.0.1 或 ::1 的连接以及 tailscale nc 等 LocalAPI 连接，有会话时推迟切回，最多等 3 天，并且会排除 tailscaled 自身连向本机回环代理的 socket，不会误判成用户会话。"
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../../">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/logo-dark.svg">
+          <img src="../../../assets/logo-light.svg" alt="" width="28" height="28">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="nav" aria-label="主导航">
+        <a href="../../">首页</a>
+        <a href="../hpc-slurm/">超算与 Slurm</a>
+        <a href="../kubernetes-docker/">Kubernetes</a>
+        <a href="./" aria-current="page">代理切换</a>
+        <a href="../vs-manual-userspace/">方案对比</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="../../../guides/proxy-failover/" lang="en">English</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <button id="theme-toggle" class="theme-btn" type="button">深色</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <nav class="breadcrumb" aria-label="面包屑导航">
+      <a href="../../">Tailspace</a>
+      <span aria-hidden="true">/</span>
+      <span>HTTP 代理与切换</span>
+    </nav>
+
+    <h1>Tailscale HTTP 代理与直连切换</h1>
+    <p class="lead">
+      Tailscale 只在启动时读取一次代理设置。在中国大陆实验室服务器、企业内网或跑在易断 VPN 上的 HTTP 代理环境里，代理一旦中断，常规的 <code>tailscaled</code> 就会一直离线直到有人手动登录重启 Tailscale。Tailspace 同时监管直连路径和代理路径，哪条断了就切到另一条。
+    </p>
+
+    <h2>带 HTTP 代理安装与修改</h2>
+    <p>首次安装前先设置 <code>https_proxy</code>，确保安装脚本能下载 Tailspace 与 Tailscale，同时把这个代理保存给代理路径使用：</p>
+    <pre><code>export https_proxy=http://127.0.0.1:7890
+curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</code></pre>
+    <p>之后随时可以更换或取消代理，无需重装：</p>
+    <pre><code>tailspace set --proxy http://127.0.0.1:7890
+tailspace set --proxy none</code></pre>
+    <p>只支持 <code>http://</code> 代理。Tailscale 会忽略 <code>ALL_PROXY</code>，并把所有代理都当作 HTTP 代理，即使写成 <code>socks5://</code> 也一样。Tailspace 只通过环境变量传递代理，不写进命令行参数，避免代理凭据暴露在 <code>/proc/*/cmdline</code>。</p>
+
+    <h2>直连路径与代理路径的切换机制</h2>
+    <figure class="figure">
+      <picture>
+        <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/paths-dark.svg">
+        <img src="../../../assets/paths-light.svg"
+             alt="两条泳道的时间线，分别是直连路径和代理路径。服务器起初走直连路径。直连路径不通后，监管进程等待约 4 分钟让 Tailscale 自行恢复，然后切换到代理路径。后来代理路径也不通了，此时直连路径已经恢复，于是等待约 1 分钟后，监管进程切回直连路径。"
+             width="880" height="200">
+      </picture>
+    </figure>
+    <ul>
+      <li><strong>宽限期。</strong> Tailscale 离线后，监管进程在直连路径上等 4 分钟留给 Tailscale 自己重连，在代理路径上等 1 分钟再开始探测。</li>
+      <li><strong>真实握手探测。</strong> 监管进程用 <code>tailscale debug ts2021</code> 经对应路径向协调服务器发起全新 Noise 握手。如果当前路径不通而另一条通，就不等会话结束直接切换。</li>
+      <li><strong>识别假死。</strong> 如果当前路径连续两次测试都通，Tailscale 却一直离线，说明 Tailscale 卡住了，监管进程会在同一条路径上重启 Tailscale。</li>
+      <li><strong>不中断会话的回切与退避。</strong> 切到代理路径后先等 15 分钟，之后每 5 分钟探测一次直连路径。在线且连续两次通过后，等活动 Tailscale 会话结束再切回直连，累计最多等 3 天。若切回后 30 分钟内直连再次中断，这 15 分钟等待会加倍，最长 4 小时。</li>
+      <li><strong>规避 TLS ML-KEM 丢包。</strong> Tailspace 启动时设 <code>GODEBUG=tlsmlkem=0</code>，防止中间网络设备丢弃 ML-KEM 密钥交换的 TLS 握手，见 <a href="https://github.com/tailscale/tailscale/issues/20777">tailscale#20777</a>。所有流量仍受 Tailscale 自身的加密保护。</li>
+    </ul>
+
+    <h2>把 DERP 中继拉近</h2>
+    <p>当服务器位于 hard NAT 后或只能经 HTTP 代理上网时，流量会走中继。运行 <code>tailspace status</code> 可查看活动设备是否经过 DERP 中继，设备旁边会显示 <code>relay</code>。有两种 Tailscale 功能可以把中继拉近：</p>
+    <ul>
+      <li><strong><a href="https://tailscale.com/kb/1118/custom-derp-servers">自建 DERP 服务器</a>。</strong> 对直连路径和 HTTP 代理路径都有效。不需要域名，因为 <code>derper --certmode manual --hostname IP --verify-clients</code> 会自己生成证书并打印要加进策略的配置；同机运行 Tailscale 后，<code>--verify-clients</code> 只放行你的 tailnet。</li>
+      <li><strong><a href="https://tailscale.com/docs/features/peer-relay">Peer Relay</a>。</strong> 需要 Tailscale 1.86 或更新版本，能让你自己的某台设备为其他设备做中继。它使用 UDP，而 HTTP 代理不转发 UDP，所以只在服务器能直接发出 UDP 时有用。</li>
+    </ul>
+
+    <h2>常见问题</h2>
+    <div class="faq-list">
+      <details open>
+        <summary>为什么 Tailscale 自己不会在代理和直连之间切换？</summary>
+        <div class="faq-body">
+          <p><code>tailscaled</code> 只在启动时读取一次 <code>https_proxy</code>。Tailspace 用 <code>tailscale debug ts2021</code> 探测直连和代理两条路径，当使用中的路径失效时带着可用环境重启 Tailscale。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Tailscale 支持通过 ALL_PROXY 使用 SOCKS5 代理吗？</summary>
+        <div class="faq-body">
+          <p>不支持。Tailscale 会忽略 <code>ALL_PROXY</code>，并把所有代理当作 HTTP 代理。请使用 Clash 或 Mihomo 等工具的 HTTP 混合端口，以 <code>http://HOST:PORT</code> 传给 Tailspace。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>从代理切回直连时会断开我正在用的 SSH 会话吗？</summary>
+        <div class="faq-body">
+          <p>不会。监管进程会检查 SSH 会话、转发到 <code>127.0.0.1</code> 或 <code>::1</code> 的连接以及 <code>tailscale nc</code> 等 LocalAPI 连接，有会话时推迟切回，最多等 3 天，并且会排除 <code>tailscaled</code> 自身连向本机回环代理的 socket，不会误判成用户会话。</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="actions">
+      <a class="btn btn-primary" href="../../">返回 Tailspace 主页</a>
+      <a class="btn" href="../vs-manual-userspace/">下一篇：与手动方案对比</a>
+      <a class="btn" href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.zh-CN.md">完整参考</a>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <span>Tailspace · MIT 许可证 · <a href="https://github.com/ttttonyhe/tailspace">github.com/ttttonyhe/tailspace</a></span>
+      <div class="footer-links">
+        <a href="../../">首页</a>
+        <a href="../../../guides/proxy-failover/" lang="en">English</a>
+        <a href="../../../llms.txt">llms.txt</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../../../app.js"></script>
+</body>
+</html>

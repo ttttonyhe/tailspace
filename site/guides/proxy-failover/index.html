@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tailscale HTTP proxy &amp; direct failover · Tailspace</title>
+  <meta name="description" content="Keep rootless Tailscale online behind flaky HTTP proxies or firewalls with direct and proxy failover, custom DERP servers, and peer relays.">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/guides/proxy-failover/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/proxy-failover/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/proxy-failover/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/proxy-failover/">
+  <link rel="icon" href="../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="Tailscale HTTP proxy &amp; direct failover · Tailspace">
+  <meta property="og:description" content="Direct and HTTP proxy failover for Tailscale, plus custom DERP servers, peer relays, and TLS ML-KEM workaround.">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/guides/proxy-failover/">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace: Run Tailscale in Rootless Mode">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Tailscale HTTP proxy &amp; direct failover · Tailspace">
+  <meta name="twitter:description" content="Direct and HTTP proxy switching for rootless Tailscale when flaky proxies or firewalls drop.">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "Tailscale behind HTTP proxies and direct/proxy failover",
+        "description": "Keep rootless Tailscale online behind flaky HTTP proxies or firewalls with direct and proxy failover, custom DERP servers, and peer relays.",
+        "url": "https://ttttonyhe.github.io/tailspace/guides/proxy-failover/",
+        "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/guides/proxy-failover/",
+        "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+        "datePublished": "2026-11-20",
+        "dateModified": "2026-11-20",
+        "author": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "publisher": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "about": [
+          { "@type": "Thing", "name": "Tailscale" },
+          { "@type": "Thing", "name": "HTTP proxy" },
+          { "@type": "Thing", "name": "DERP relay" }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Tailspace", "item": "https://ttttonyhe.github.io/tailspace/" },
+          { "@type": "ListItem", "position": 2, "name": "HTTP proxy & failover", "item": "https://ttttonyhe.github.io/tailspace/guides/proxy-failover/" }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Why can't Tailscale switch proxies on its own?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "tailscaled reads https_proxy only once at startup. Tailspace probes both paths with tailscale debug ts2021 and restarts tailscaled in the working environment whenever the active path breaks."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Tailscale support SOCKS5 proxies via ALL_PROXY?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Tailscale ignores ALL_PROXY and parses every proxy as HTTP. Expose an HTTP proxy port, such as Clash or Mihomo's mixed port, and pass it as http://HOST:PORT."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Will failing back to the direct path kill my open SSH session?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Moving back to direct waits while Tailspace sees open SSH sessions, forwarded connections to 127.0.0.1 or ::1, or LocalAPI clients, up to 3 days in all. Tailspace excludes tailscaled's own loopback proxy sockets from that count so a local proxy never blocks failback forever."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../../">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="28" height="28">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="../../">Home</a>
+        <a href="../hpc-slurm/">HPC &amp; Slurm</a>
+        <a href="../kubernetes-docker/">Kubernetes</a>
+        <a href="./" aria-current="page">Proxies</a>
+        <a href="../vs-manual-userspace/">Comparison</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="../../zh/guides/proxy-failover/" lang="zh-CN">简体中文</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <button id="theme-toggle" class="theme-btn" type="button">dark</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="../../">Tailspace</a>
+      <span aria-hidden="true">/</span>
+      <span>HTTP proxy &amp; failover</span>
+    </nav>
+
+    <h1>Tailscale behind HTTP proxies and direct/proxy failover</h1>
+    <p class="lead">
+      Tailscale reads its proxy setting only when <code>tailscaled</code> starts. On corporate networks, campus firewalls, or servers in mainland China whose HTTP proxy runs over a flaky VPN, a single proxy drop leaves standard Tailscale offline until someone restarts it by hand. Tailspace supervises both the direct path and the proxy path and switches when either breaks.
+    </p>
+
+    <h2>Install with an HTTP proxy</h2>
+    <p>Export <code>https_proxy</code> before running the installer so curl can download Tailspace and Tailscale, and so Tailspace saves that proxy for the proxy path:</p>
+    <pre><code>export https_proxy=http://127.0.0.1:7890
+curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</code></pre>
+    <p>Change or clear the saved proxy at any time without reinstalling:</p>
+    <pre><code>tailspace set --proxy http://127.0.0.1:7890
+tailspace set --proxy none</code></pre>
+    <p>Only <code>http://</code> proxies work. Tailscale ignores <code>ALL_PROXY</code> and treats every proxy as HTTP, even if written as <code>socks5://</code>. Tailspace passes proxy settings via environment variables rather than command arguments so credentials stay out of <code>/proc/*/cmdline</code>.</p>
+
+    <h2>How direct and proxy failover works</h2>
+    <figure class="figure">
+      <picture>
+        <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/paths-dark.svg">
+        <img src="../../assets/paths-light.svg"
+             alt="A timeline with two lanes, the direct path and the proxy path. The server starts on the direct path. When the direct path fails, the supervisor waits about 4 minutes for Tailscale to recover, then switches to the proxy path. Later the proxy path fails. The direct path works again by then, so after a wait of about a minute the supervisor switches back to the direct path."
+             width="880" height="200">
+      </picture>
+    </figure>
+    <ul>
+      <li><strong>Grace windows.</strong> When Tailscale goes offline, the supervisor waits 4 minutes on the direct path to cover Tailscale's own reconnect timers, or 1 minute on the proxy path, before probing.</li>
+      <li><strong>Real handshake probes.</strong> Tailspace tests each path by opening a fresh Noise handshake to Tailscale's coordination server with <code>tailscale debug ts2021</code>. If the active path fails and the backup path passes, it switches without waiting for sessions to close.</li>
+      <li><strong>Stuck-daemon detection.</strong> If the active path passes two consecutive probes while Tailscale stays offline, Tailscale is stuck and the supervisor restarts it on the same path.</li>
+      <li><strong>Session-safe failback with flap backoff.</strong> After switching to the proxy path, Tailspace waits 15 minutes, then tests the direct path every 5 minutes. Once two consecutive tests pass while online, it waits for active Tailscale sessions to close, for 3 days at most, before moving back to direct. If direct fails again within 30 minutes, that 15-minute wait doubles, up to 4 hours.</li>
+      <li><strong>TLS ML-KEM compatibility.</strong> Tailspace sets <code>GODEBUG=tlsmlkem=0</code> so middleboxes that drop post-quantum ML-KEM TLS handshakes don't block control connections; see <a href="https://github.com/tailscale/tailscale/issues/20777">tailscale#20777</a>. Tailscale's own encryption still protects all traffic.</li>
+    </ul>
+
+    <h2>Speeding up slow DERP relays</h2>
+    <p>When a server sits behind hard NAT or reaches the internet only over an HTTP proxy, traffic travels through a relay. Run <code>tailspace status</code> to see whether active devices hit a DERP relay, shown as <code>relay</code>. Two Tailscale features bring a relay closer:</p>
+    <ul>
+      <li><strong><a href="https://tailscale.com/kb/1118/custom-derp-servers">Self-hosted custom DERP server</a>.</strong> Helps on both the direct path and the HTTP proxy path. You don't need a domain name because <code>derper --certmode manual --hostname IP --verify-clients</code> makes its own certificate and prints the policy lines. Run Tailscale on the same machine so <code>--verify-clients</code> admits only your tailnet.</li>
+      <li><strong><a href="https://tailscale.com/docs/features/peer-relay">Peer relays</a>.</strong> Available in Tailscale 1.86 and newer, peer relays let one of your own devices relay for the others. They use UDP, which HTTP proxies don't carry, so they help only when the server can send UDP out directly.</li>
+    </ul>
+
+    <h2>Frequently asked questions</h2>
+    <div class="faq-list">
+      <details open>
+        <summary>Why can't Tailscale switch proxies on its own?</summary>
+        <div class="faq-body">
+          <p><code>tailscaled</code> reads <code>https_proxy</code> only once at startup. Tailspace probes both paths with <code>tailscale debug ts2021</code> and restarts <code>tailscaled</code> in the working environment whenever the active path breaks.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Does Tailscale support SOCKS5 proxies via ALL_PROXY?</summary>
+        <div class="faq-body">
+          <p>No. Tailscale ignores <code>ALL_PROXY</code> and parses every proxy as HTTP. Expose an HTTP proxy port, such as Clash or Mihomo's mixed port, and pass it as <code>http://HOST:PORT</code>.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Will failing back to the direct path kill my open SSH session?</summary>
+        <div class="faq-body">
+          <p>No. Moving back to direct waits while Tailspace sees open SSH sessions, forwarded connections to <code>127.0.0.1</code> or <code>::1</code>, or LocalAPI clients, up to 3 days in all. Tailspace excludes <code>tailscaled</code>'s own loopback proxy sockets from that count so a local proxy never blocks failback forever.</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="actions">
+      <a class="btn btn-primary" href="../../">Back to overview</a>
+      <a class="btn" href="../vs-manual-userspace/">Next: Compare with manual tailscaled</a>
+      <a class="btn" href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.md">Full reference</a>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <span>Tailspace · MIT license · <a href="https://github.com/ttttonyhe/tailspace">github.com/ttttonyhe/tailspace</a></span>
+      <div class="footer-links">
+        <a href="../../">Home</a>
+        <a href="../../zh/guides/proxy-failover/" lang="zh-CN">简体中文</a>
+        <a href="../../llms.txt">llms.txt</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../../app.js"></script>
+</body>
+</html>

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HPC 与 Slurm 免 root 运行 Tailscale · Tailspace</title>
+  <meta name="description" content="在无 root 和 /dev/net/tun 的 HPC 与 Slurm 集群运行 Tailscale，支持 VS Code Remote-SSH、Jupyter、共享 NFS 与 CentOS 7。">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/zh/guides/hpc-slurm/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/hpc-slurm/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/">
+  <link rel="icon" href="../../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="HPC 与 Slurm 免 root 运行 Tailscale · Tailspace">
+  <meta property="og:description" content="免 root、免 VPN 在超算和 Slurm 集群上运行 Tailscale，支持 VS Code Remote-SSH、Jupyter、NFS 共享家目录与 CentOS 7。">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/zh/guides/hpc-slurm/">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace：非 Root 身份运行 Tailscale">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="HPC 与 Slurm 免 root 运行 Tailscale · Tailspace">
+  <meta name="twitter:description" content="免 root、免 sudo 在高校超算和 Slurm 集群上运行 Tailscale。">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../../styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "inLanguage": "zh-CN",
+        "headline": "高校超算与 Slurm 集群免 root 安装 Tailscale",
+        "description": "在无 root 和 /dev/net/tun 的 HPC 与 Slurm 集群运行 Tailscale，支持 VS Code Remote-SSH、Jupyter、共享 NFS 与 CentOS 7。",
+        "url": "https://ttttonyhe.github.io/tailspace/zh/guides/hpc-slurm/",
+        "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/zh/guides/hpc-slurm/",
+        "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+        "datePublished": "2026-11-20",
+        "dateModified": "2026-11-20",
+        "author": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "publisher": {
+          "@type": "Person",
+          "name": "Tony L. He",
+          "url": "https://lipeng.ac"
+        },
+        "about": [
+          { "@type": "Thing", "name": "Tailscale" },
+          { "@type": "Thing", "name": "High-performance computing" },
+          { "@type": "Thing", "name": "Slurm Workload Manager" }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Tailspace", "item": "https://ttttonyhe.github.io/tailspace/zh/" },
+          { "@type": "ListItem", "position": 2, "name": "超算与 Slurm", "item": "https://ttttonyhe.github.io/tailspace/zh/guides/hpc-slurm/" }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "超算多台节点共用同一个 NFS 家目录会冲突吗？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "不会。每台节点的状态、文件锁和日志都保存在 ~/.tailspace/state/HOSTNAME/ 下，共用同一份程序，各自以独立设备加入你的 tailnet。"
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "如果超算家目录挂载了 noexec 或不支持 flock 怎么办？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "安装时传入 TAILSPACE_PREFIX=/scratch/$USER/tailspace，把 Tailspace 装到本地 scratch 盘，之后的 tailspace 命令会自己找到这个目录。"
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "CentOS 7 这类老系统超算能运行吗？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "可以。Tailspace 支持 Linux 3.2 及以上内核、bash 4.2 与 util-linux 2.23，CI 每次提交都会在源码编译的 bash 4.2 上跑完整测试。"
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../../">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/logo-dark.svg">
+          <img src="../../../assets/logo-light.svg" alt="" width="28" height="28">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="nav" aria-label="主导航">
+        <a href="../../">首页</a>
+        <a href="./" aria-current="page">超算与 Slurm</a>
+        <a href="../kubernetes-docker/">Kubernetes</a>
+        <a href="../proxy-failover/">代理切换</a>
+        <a href="../vs-manual-userspace/">方案对比</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="../../../guides/hpc-slurm/" lang="en">English</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <button id="theme-toggle" class="theme-btn" type="button">深色</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <nav class="breadcrumb" aria-label="面包屑导航">
+      <a href="../../">Tailspace</a>
+      <span aria-hidden="true">/</span>
+      <span>超算与 Slurm</span>
+    </nav>
+
+    <h1>高校超算与 Slurm 集群免 root 安装 Tailscale</h1>
+    <p class="lead">
+      高校超算和实验室集群通常不提供 <code>sudo</code>、<code>/dev/net/tun</code> 或 <code>systemd --user</code> 常驻权限，还常见 CentOS 7、RHEL 与 NFS 共享家目录。Tailspace 在你的普通账号下以 userspace 模式安装并监管 <code>tailscaled</code>，崩溃和服务器重启都能恢复，让你免 VPN 连上 SSH、VS Code Remote-SSH 和 Jupyter。
+    </p>
+
+    <div class="callout">
+      <p><strong>安装前请先查看集群管理规定。</strong> Tailspace 会在后台维持 Tailscale 进程，Tailscale SSH 也会绕过集群自己的两步验证。部分高校超算禁止登录节点常驻进程或外部隧道，请先确认规定。</p>
+    </div>
+
+    <h2>在登录节点或 Slurm 节点上安装</h2>
+    <p>交互式安装运行默认命令：</p>
+    <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</code></pre>
+    <p>如果是脚本部署或临时 Slurm 计算节点，把带 <code>tag:server</code> 标签的可重复 auth key 存入 <code>0600</code> 权限文件，通过 <code>TS_AUTHKEY</code> 传入，避免同机其他用户在 <code>/proc/*/cmdline</code> 看到密钥。希望作业结束后节点下线的话，创建 key 时再勾选 ephemeral：</p>
+    <pre><code>chmod 600 ~/.ts-key
+curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | \
+  TS_AUTHKEY=file:$HOME/.ts-key bash -s -- install --hostname hpc-login-01</code></pre>
+    <p>带标签的设备默认关闭密钥过期。把 <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a> 放进你的访问控制策略，你的笔记本可以 SSH 到超算节点，同时禁止超算节点主动连向你的个人设备。</p>
+
+    <h2>免 VPN 使用 VS Code Remote-SSH、Cursor 与 Jupyter</h2>
+    <p>Tailspace 在 22 端口开启 Tailscale SSH。如果节点运行了 OpenSSH 且你没有程序占用 <code>127.0.0.1:2222</code>，Tailspace 会把 OpenSSH 转发到 2222 端口：</p>
+    <ul>
+      <li><strong>22 端口连终端、Cursor 与 VS Code Remote-SSH。</strong> 用你的 Tailscale 身份连到 <code>you@hpc-login-01</code>，不用配置 SSH 密钥或跳板机。把策略 <code>ssh</code> 规则里的 <code>"check"</code> 改成 <code>"accept"</code> 可关闭每 12 小时的浏览器复验。</li>
+      <li><strong>2222 端口保留原有 SSH 密钥。</strong> 想继续用本机 <code>~/.ssh/config</code>、agent forwarding、<code>scp</code> 或 <code>rsync</code>，把端口设为 2222。</li>
+      <li><strong>访问 JupyterLab 与 TensorBoard。</strong> 除 22 和 2222 外的所有端口都直通节点 <code>127.0.0.1</code>。在节点上启动 8888 端口的 Jupyter 或 6006 端口的 TensorBoard，本机浏览器打开 <code>http://hpc-login-01:8888</code> 或 <code>http://hpc-login-01:6006</code>，不用开 <code>ssh -L</code> 转发。</li>
+    </ul>
+
+    <h2>多节点共用 NFS 家目录</h2>
+    <p>大多数超算在所有登录节点和计算节点间挂载同一个 NFS <code>$HOME</code>。多台节点直接跑单状态目录的 <code>tailscaled</code> 脚本会互相覆盖状态文件。</p>
+    <p>Tailspace 把每台节点的状态、锁和日志按主机名存放在 <code>~/.tailspace/state/HOSTNAME/</code> 下，同时共用 <code>bin/</code>、<code>config</code> 和 shell 检查：</p>
+    <pre><code>~/.tailspace/
+  bin/                  共享的 tailscale 和 tailscaled 程序
+  config                共享配置
+  state/login-01/       login-01 独立的状态、锁与日志
+  state/login-02/       login-02 独立的状态、锁与日志</code></pre>
+    <p>在每台需要加入 tailnet 的节点上各运行一次 <code>tailspace install</code>。卸载某一台节点时，<code>tailspace uninstall</code> 只清理该节点的状态目录，保留其他节点所需的共享文件。</p>
+
+    <h2>家目录挂载 noexec 或不支持文件锁</h2>
+    <p>如果集群的家目录挂载为 <code>noexec</code>、文件锁失败或 Unix socket 路径过长，用 <code>TAILSPACE_PREFIX</code> 装到本地磁盘或 scratch 目录：</p>
+    <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | \
+  TAILSPACE_PREFIX=/scratch/$USER/tailspace bash</code></pre>
+    <p>之后的 <code>tailspace</code> 和 <code>tailscale</code> 命令会自己找到该安装目录。</p>
+
+    <h2>CentOS 7 兼容与多核共享节点限制</h2>
+    <ul>
+      <li><strong>老内核兼容。</strong> 支持 Linux 3.2+、<code>bash</code> 4.2+ 与 <code>util-linux</code> 2.23+，CI 在每次提交时都用源码编译的 bash 4.2 跑完整测试。</li>
+      <li><strong>多核节点低开销。</strong> 可用核心超过 8 个时设 <code>GOMAXPROCS=8</code>，在 124 核 Pod 上把 Tailscale 线程从 57 降到 14，每次状态检查的 CPU 时间从 57 毫秒降到 15 毫秒；同时设 <code>TS_PORTLIST=false</code> 不再每秒扫描端口。</li>
+      <li><strong>共享主机隔离。</strong> <code>~/.tailspace</code> 权限为 700，进程识别只读取 <code>/proc</code> 里你自己的描述符，且关闭无密码的 SOCKS5 与 HTTP 代理，同机其他用户进不了你的 tailnet。</li>
+    </ul>
+
+    <h2>常见问题</h2>
+    <div class="faq-list">
+      <details open>
+        <summary>超算多台节点共用同一个 NFS 家目录会冲突吗？</summary>
+        <div class="faq-body">
+          <p>不会。每台节点的状态、文件锁和日志都保存在 <code>~/.tailspace/state/HOSTNAME/</code> 下，共用同一份程序，各自以独立设备加入你的 tailnet。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>如果超算家目录挂载了 noexec 或不支持 flock 怎么办？</summary>
+        <div class="faq-body">
+          <p>安装时传入 <code>TAILSPACE_PREFIX=/scratch/$USER/tailspace</code>，把 Tailspace 装到本地 scratch 盘，之后的 <code>tailspace</code> 命令会自己找到这个目录。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>CentOS 7 这类老系统超算能运行吗？</summary>
+        <div class="faq-body">
+          <p>可以。Tailspace 支持 Linux 3.2 及以上内核、bash 4.2 与 util-linux 2.23，CI 每次提交都会在源码编译的 bash 4.2 上跑完整测试。</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="actions">
+      <a class="btn btn-primary" href="../../">返回 Tailspace 主页</a>
+      <a class="btn" href="../kubernetes-docker/">下一篇：Kubernetes 与容器指南</a>
+      <a class="btn" href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.zh-CN.md">完整参考</a>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <span>Tailspace · MIT 许可证 · <a href="https://github.com/ttttonyhe/tailspace">github.com/ttttonyhe/tailspace</a></span>
+      <div class="footer-links">
+        <a href="../../">首页</a>
+        <a href="../../../guides/hpc-slurm/" lang="en">English</a>
+        <a href="../../../llms.txt">llms.txt</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../../../app.js"></script>
+</body>
+</html>
