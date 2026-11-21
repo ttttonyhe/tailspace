@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>非 Root 运行 Tailscale 指南 · Tailspace</title>
+  <meta name="description" content="高校超算、Slurm、Kubernetes Pod、Docker、VS Code Remote-SSH、Jupyter、HTTP 代理与常见报错的无 root Tailscale 指南。">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/zh/guides/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/">
+  <link rel="icon" href="../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="非 Root 运行 Tailscale 指南 · Tailspace">
+  <meta property="og:description" content="高校超算、Slurm、Kubernetes Pod、Docker、VS Code Remote-SSH、Jupyter、HTTP 代理与常见报错的无 root Tailscale 指南。">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/zh/guides/">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace：非 Root 身份运行 Tailscale">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="非 Root 运行 Tailscale 指南 · Tailspace">
+  <meta name="twitter:description" content="高校超算、Slurm、Kubernetes Pod、Docker、VS Code Remote-SSH、Jupyter、HTTP 代理与常见报错的无 root Tailscale 指南。">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../styles.css">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://ttttonyhe.github.io/tailspace/#website",
+      "name": "Tailspace",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "inLanguage": [
+        "en",
+        "zh-CN"
+      ],
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://ttttonyhe.github.io/tailspace/#author",
+      "name": "Tony L. He",
+      "url": "https://lipeng.ac"
+    },
+    {
+      "@type": "TechArticle",
+      "inLanguage": "zh-CN",
+      "headline": "指南",
+      "description": "高校超算、Slurm、Kubernetes Pod、Docker、VS Code Remote-SSH、Jupyter、HTTP 代理与常见报错的无 root Tailscale 指南。",
+      "url": "https://ttttonyhe.github.io/tailspace/zh/guides/",
+      "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/zh/guides/",
+      "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+      "datePublished": "2026-11-20",
+      "dateModified": "2026-11-20",
+      "author": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Tailscale"
+        },
+        {
+          "@type": "Thing",
+          "name": "Linux"
+        },
+        {
+          "@type": "Thing",
+          "name": "Userspace networking"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Tailspace",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "指南",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/guides/"
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+
+  <header class="mobile-bar">
+    <a class="brand" href="../../zh/">
+      <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="切换导航">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="移动导航">
+      <a href="../../zh/">首页</a>
+      <a href="../../zh/guides/" aria-current="page">指南</a>
+      <a href="../../zh/reference/">参考</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="../../guides/" lang="en">English</a>
+      <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="站点导航">
+      <a class="brand" href="../../zh/">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="side-nav" aria-label="主导航">
+        <a href="../../zh/">首页</a>
+        <a href="../../zh/guides/" aria-current="page">指南</a>
+        <a href="../../zh/reference/">参考</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      </nav>
+      <div class="side-utils">
+        <a href="../../guides/" lang="en">English</a>
+        <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
+      </div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
+    </aside>
+
+    <main id="main" class="column">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="../../zh/">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <span>指南</span>
+      </nav>
+
+      <h1>指南</h1>
+      <p>覆盖共享 Linux 服务器、容器、编辑器、HTTP 代理和常见报错的无 root Tailscale 专题文档。</p>
+
+      <ul class="guide-list">
+        <li><a class="guide-row" href="hpc-slurm/"><span class="guide-row-title">超算与 Slurm 集群</span><span class="guide-row-desc">共享 NFS 家目录、noexec 本地盘、auth key 与 CentOS 7 兼容</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="kubernetes-docker/"><span class="guide-row-title">Kubernetes 与 Docker</span><span class="guide-row-desc">无需 CAP_NET_ADMIN、/dev/net/tun 或 systemd，容器内自动关 UDP GSO</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="vscode-jupyter-ssh/"><span class="guide-row-title">VS Code、Cursor 与 Jupyter</span><span class="guide-row-desc">22 端口 Tailscale SSH、2222 端口 OpenSSH、Web 端口与 tailscale nc</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="proxy-failover/"><span class="guide-row-title">HTTP 代理与 DERP</span><span class="guide-row-desc">直连/代理切换规则、中国大陆网络、自建 DERP 与 Peer Relay</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="vs-manual-userspace/"><span class="guide-row-title">与手动 tailscaled 对比</span><span class="guide-row-desc">对比手动 nohup tailscaled 与 systemd --user 方案</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="troubleshooting/"><span class="guide-row-title">故障排查</span><span class="guide-row-desc">/dev/net/tun、systemd、180 天密钥过期、noexec 与 DERP 延迟</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+      </ul>
+
+      <p>查找具体命令、选项、环境变量或目录结构，见<a href="../reference/">命令与选项参考</a>。</p>
+
+      <footer class="col-footer">
+        <span>Tailspace 以 <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT 许可证</a>发布，与 Tailscale Inc. 没有关联。</span>
+        <div class="col-footer-links">
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+          <a href="../../guides/" lang="en">English</a>
+          <a href="../../llms.txt">llms.txt</a>
+          <a href="../../sitemap.xml">sitemap.xml</a>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="../../app.js"></script>
+</body>
+</html>

@@ -96,6 +96,12 @@
         {
           "@type": "ListItem",
           "position": 2,
+          "name": "指南",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/guides/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
           "name": "方案对比",
           "item": "https://ttttonyhe.github.io/tailspace/zh/guides/vs-manual-userspace/"
         }
@@ -153,18 +159,12 @@
   <div class="mobile-drawer" data-mobile-drawer>
     <nav aria-label="移动导航">
       <a href="../../../zh/">首页</a>
-      <a href="../../../zh/reference/">完整参考</a>
-      <a href="../../../zh/guides/hpc-slurm/">超算与 Slurm</a>
-      <a href="../../../zh/guides/kubernetes-docker/">Kubernetes</a>
-      <a href="../../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
-      <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
-      <a href="../../../zh/guides/vs-manual-userspace/" aria-current="page">方案对比</a>
-      <a href="../../../zh/guides/troubleshooting/">故障排查</a>
+      <a href="../../../zh/guides/" aria-current="page">指南</a>
+      <a href="../../../zh/reference/">参考</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
     </nav>
     <div class="mobile-drawer-utils">
       <a href="../../../guides/vs-manual-userspace/" lang="en">English</a>
-      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-      <a href="../../../llms.txt">llms.txt</a>
       <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
     </div>
   </div>
@@ -180,32 +180,28 @@
       </a>
       <nav class="side-nav" aria-label="主导航">
         <a href="../../../zh/">首页</a>
-        <a href="../../../zh/reference/">完整参考</a>
-        <a href="../../../zh/guides/hpc-slurm/">超算与 Slurm</a>
-        <a href="../../../zh/guides/kubernetes-docker/">Kubernetes</a>
-        <a href="../../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
-        <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
-        <a href="../../../zh/guides/vs-manual-userspace/" aria-current="page">方案对比</a>
-        <a href="../../../zh/guides/troubleshooting/">故障排查</a>
+        <a href="../../../zh/guides/" aria-current="page">指南</a>
+        <a href="../../../zh/reference/">参考</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
       </nav>
       <div class="side-utils">
         <a href="../../../guides/vs-manual-userspace/" lang="en">English</a>
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a href="../../../llms.txt">llms.txt</a>
         <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
       </div>
-      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
     </aside>
 
     <main id="main" class="column">
       <nav class="breadcrumb" aria-label="面包屑导航">
         <a href="../../../zh/">Tailspace</a>
         <span aria-hidden="true">/</span>
+        <a href="../../../zh/guides/">指南</a>
+        <span aria-hidden="true">/</span>
         <span>方案对比</span>
       </nav>
 
       <h1>Tailspace 与手动 tailscaled、systemd --user 对比</h1>
-      <p>网上大多数无 root 运行 Tailscale 的教程，会让你下载静态压缩包后运行 <code class="nowrap">nohup tailscaled --tun=userspace-networking &amp;</code>，或者写一个 <code>~/.config/systemd/user/</code> 服务。这套做法能撑过一个下午，但想让一台无 root 服务器稳定在线几个月，离不开监管进程。</p>
+      <p>网上大多数无 root 运行 Tailscale 的教程，会让你下载静态压缩包后运行 <code>nohup tailscaled --tun=userspace-networking &amp;</code>，或者写一个 <code>~/.config/systemd/user/</code> 服务。这套做法能撑过一个下午，但想让一台无 root 服务器稳定在线几个月，离不开监管进程。</p>
 
       <div class="section-head">
         <span class="section-tag">功能矩阵</span>
@@ -249,11 +245,11 @@
       </ul>
 
       <div class="section-head" id="faq">
-        <span class="section-tag">常见问题</span>
+        <span class="section-tag">FAQ</span>
         <h2>常见问题</h2>
       </div>
       <div class="faq-list">
-        <details open>
+        <details>
           <summary>为什么不直接用 nohup tailscaled --tun=userspace-networking 后台运行？</summary>
           <div class="faq-body"><p>单纯的 <code>nohup</code> 进程崩溃或服务器重启后无法恢复，代理断了不会切换，不会自动更新，在共享 NFS 家目录的多台节点上还会互相争抢状态文件。</p></div>
         </details>

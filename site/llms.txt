@@ -11,8 +11,10 @@
 
 ## Primary docs
 
-- [Homepage (English)](https://ttttonyhe.github.io/tailspace/): Quick install, supervision overview, failover, benchmarks, and FAQ.
+- [Homepage (English)](https://ttttonyhe.github.io/tailspace/): Quick install, key capabilities, benchmarks, and FAQ.
 - [Homepage (简体中文)](https://ttttonyhe.github.io/tailspace/zh/): Chinese overview, install, and FAQ.
+- [Guides index (English)](https://ttttonyhe.github.io/tailspace/guides/): All environment and workflow guides.
+- [Guides index (简体中文)](https://ttttonyhe.github.io/tailspace/zh/guides/): 全部场景与工作流指南。
 - [CLI and options reference](https://ttttonyhe.github.io/tailspace/reference/): Commands, install/set options, environment variables, files layout, stop reasons, and Tailscale tuning.
 - [Full documentation bundle](https://ttttonyhe.github.io/tailspace/llms-full.txt): Complete README, ADVANCED reference, and example tailnet policy in one plain-text markdown file.
 - [README.md](https://raw.githubusercontent.com/ttttonyhe/tailspace/main/README.md): Short introduction and everyday CLI commands.

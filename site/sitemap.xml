@@ -18,6 +18,22 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://ttttonyhe.github.io/tailspace/guides/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/"/>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/"/>
+    <lastmod>2026-11-20</lastmod>
+    <priority>0.95</priority>
+  </url>
+  <url>
+    <loc>https://ttttonyhe.github.io/tailspace/zh/guides/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/"/>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/"/>
+    <lastmod>2026-11-20</lastmod>
+    <priority>0.95</priority>
+  </url>
+  <url>
     <loc>https://ttttonyhe.github.io/tailspace/reference/</loc>
     <xhtml:link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/reference/"/>
     <xhtml:link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/reference/"/>

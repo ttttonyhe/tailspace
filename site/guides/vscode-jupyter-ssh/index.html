@@ -96,6 +96,12 @@
         {
           "@type": "ListItem",
           "position": 2,
+          "name": "Guides",
+          "item": "https://ttttonyhe.github.io/tailspace/guides/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
           "name": "VS Code & Jupyter",
           "item": "https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/"
         }
@@ -153,18 +159,12 @@
   <div class="mobile-drawer" data-mobile-drawer>
     <nav aria-label="Mobile">
       <a href="../../">Home</a>
+      <a href="../../guides/" aria-current="page">Guides</a>
       <a href="../../reference/">Reference</a>
-      <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
-      <a href="../../guides/kubernetes-docker/">Kubernetes</a>
-      <a href="../../guides/vscode-jupyter-ssh/" aria-current="page">VS Code &amp; Jupyter</a>
-      <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
-      <a href="../../guides/vs-manual-userspace/">Comparison</a>
-      <a href="../../guides/troubleshooting/">Troubleshooting</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
     </nav>
     <div class="mobile-drawer-utils">
       <a href="../../zh/guides/vscode-jupyter-ssh/" lang="zh-CN">简体中文</a>
-      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-      <a href="../../llms.txt">llms.txt</a>
       <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
     </div>
   </div>
@@ -180,26 +180,22 @@
       </a>
       <nav class="side-nav" aria-label="Primary">
         <a href="../../">Home</a>
+        <a href="../../guides/" aria-current="page">Guides</a>
         <a href="../../reference/">Reference</a>
-        <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
-        <a href="../../guides/kubernetes-docker/">Kubernetes</a>
-        <a href="../../guides/vscode-jupyter-ssh/" aria-current="page">VS Code &amp; Jupyter</a>
-        <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
-        <a href="../../guides/vs-manual-userspace/">Comparison</a>
-        <a href="../../guides/troubleshooting/">Troubleshooting</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
       </nav>
       <div class="side-utils">
         <a href="../../zh/guides/vscode-jupyter-ssh/" lang="zh-CN">简体中文</a>
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a href="../../llms.txt">llms.txt</a>
         <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
       </div>
-      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
     </aside>
 
     <main id="main" class="column">
       <nav class="breadcrumb" aria-label="Breadcrumb">
         <a href="../../">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <a href="../../guides/">Guides</a>
         <span aria-hidden="true">/</span>
         <span>VS Code &amp; Jupyter</span>
       </nav>
@@ -253,7 +249,7 @@
         <h2>Frequently asked questions</h2>
       </div>
       <div class="faq-list">
-        <details open>
+        <details>
           <summary>Why does Tailscale SSH ask me to log in in the browser every 12 hours?</summary>
           <div class="faq-body"><p>Tailscale's default SSH policy uses check mode, which re-authenticates every 12 hours. Change <code>"check"</code> to <code>"accept"</code> in your policy's <code>ssh</code> rule, as <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a> does for <code>tag:server</code>.</p></div>
         </details>

@@ -96,6 +96,12 @@
         {
           "@type": "ListItem",
           "position": 2,
+          "name": "指南",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/guides/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
           "name": "超算与 Slurm",
           "item": "https://ttttonyhe.github.io/tailspace/zh/guides/hpc-slurm/"
         }
@@ -153,18 +159,12 @@
   <div class="mobile-drawer" data-mobile-drawer>
     <nav aria-label="移动导航">
       <a href="../../../zh/">首页</a>
-      <a href="../../../zh/reference/">完整参考</a>
-      <a href="../../../zh/guides/hpc-slurm/" aria-current="page">超算与 Slurm</a>
-      <a href="../../../zh/guides/kubernetes-docker/">Kubernetes</a>
-      <a href="../../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
-      <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
-      <a href="../../../zh/guides/vs-manual-userspace/">方案对比</a>
-      <a href="../../../zh/guides/troubleshooting/">故障排查</a>
+      <a href="../../../zh/guides/" aria-current="page">指南</a>
+      <a href="../../../zh/reference/">参考</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
     </nav>
     <div class="mobile-drawer-utils">
       <a href="../../../guides/hpc-slurm/" lang="en">English</a>
-      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-      <a href="../../../llms.txt">llms.txt</a>
       <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
     </div>
   </div>
@@ -180,26 +180,22 @@
       </a>
       <nav class="side-nav" aria-label="主导航">
         <a href="../../../zh/">首页</a>
-        <a href="../../../zh/reference/">完整参考</a>
-        <a href="../../../zh/guides/hpc-slurm/" aria-current="page">超算与 Slurm</a>
-        <a href="../../../zh/guides/kubernetes-docker/">Kubernetes</a>
-        <a href="../../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
-        <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
-        <a href="../../../zh/guides/vs-manual-userspace/">方案对比</a>
-        <a href="../../../zh/guides/troubleshooting/">故障排查</a>
+        <a href="../../../zh/guides/" aria-current="page">指南</a>
+        <a href="../../../zh/reference/">参考</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
       </nav>
       <div class="side-utils">
         <a href="../../../guides/hpc-slurm/" lang="en">English</a>
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a href="../../../llms.txt">llms.txt</a>
         <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
       </div>
-      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
     </aside>
 
     <main id="main" class="column">
       <nav class="breadcrumb" aria-label="面包屑导航">
         <a href="../../../zh/">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <a href="../../../zh/guides/">指南</a>
         <span aria-hidden="true">/</span>
         <span>超算与 Slurm</span>
       </nav>
@@ -250,17 +246,17 @@ curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace 
       </ul>
 
       <div class="section-head" id="faq">
-        <span class="section-tag">常见问题</span>
+        <span class="section-tag">FAQ</span>
         <h2>常见问题</h2>
       </div>
       <div class="faq-list">
-        <details open>
+        <details>
           <summary>超算多台节点共用同一个 NFS 家目录会冲突吗？</summary>
           <div class="faq-body"><p>不会。每台节点的状态、文件锁和日志都保存在 <code>~/.tailspace/state/HOSTNAME/</code> 下，共用同一份程序，各自以独立设备加入你的 tailnet。</p></div>
         </details>
         <details>
           <summary>如果超算家目录挂载了 noexec 或不支持 flock 怎么办？</summary>
-          <div class="faq-body"><p>安装时传入 <code class="nowrap">TAILSPACE_PREFIX=/scratch/$USER/tailspace</code>，把 Tailspace 装到本地 scratch 盘，之后的 <code>tailspace</code> 命令会自己找到这个目录。</p></div>
+          <div class="faq-body"><p>安装时传入 <code>TAILSPACE_PREFIX=/scratch/$USER/tailspace</code>，把 Tailspace 装到本地 scratch 盘，之后的 <code>tailspace</code> 命令会自己找到这个目录。</p></div>
         </details>
         <details>
           <summary>CentOS 7 这类老系统超算能运行吗？</summary>

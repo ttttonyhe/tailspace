@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rootless Tailscale guides · Tailspace</title>
+  <meta name="description" content="Setup guides for running Tailscale without root on HPC and Slurm clusters, Kubernetes pods, Docker, VS Code Remote-SSH, Jupyter, and HTTP proxies.">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/guides/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/">
+  <link rel="icon" href="../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="Rootless Tailscale guides · Tailspace">
+  <meta property="og:description" content="Setup guides for running Tailscale without root on HPC and Slurm clusters, Kubernetes pods, Docker, VS Code Remote-SSH, Jupyter, and HTTP proxies.">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/guides/">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace: Run Tailscale in Rootless Mode">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Rootless Tailscale guides · Tailspace">
+  <meta name="twitter:description" content="Setup guides for running Tailscale without root on HPC and Slurm clusters, Kubernetes pods, Docker, VS Code Remote-SSH, Jupyter, and HTTP proxies.">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../styles.css">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://ttttonyhe.github.io/tailspace/#website",
+      "name": "Tailspace",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "inLanguage": [
+        "en",
+        "zh-CN"
+      ],
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://ttttonyhe.github.io/tailspace/#author",
+      "name": "Tony L. He",
+      "url": "https://lipeng.ac"
+    },
+    {
+      "@type": "TechArticle",
+      "inLanguage": "en",
+      "headline": "Guides",
+      "description": "Setup guides for running Tailscale without root on HPC and Slurm clusters, Kubernetes pods, Docker, VS Code Remote-SSH, Jupyter, and HTTP proxies.",
+      "url": "https://ttttonyhe.github.io/tailspace/guides/",
+      "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/guides/",
+      "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+      "datePublished": "2026-11-20",
+      "dateModified": "2026-11-20",
+      "author": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Tailscale"
+        },
+        {
+          "@type": "Thing",
+          "name": "Linux"
+        },
+        {
+          "@type": "Thing",
+          "name": "Userspace networking"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Tailspace",
+          "item": "https://ttttonyhe.github.io/tailspace/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Guides",
+          "item": "https://ttttonyhe.github.io/tailspace/guides/"
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="mobile-bar">
+    <a class="brand" href="../">
+      <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../assets/logo-dark.svg">
+          <img src="../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="Toggle navigation">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="Mobile">
+      <a href="../">Home</a>
+      <a href="../guides/" aria-current="page">Guides</a>
+      <a href="../reference/">Reference</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="../zh/guides/" lang="zh-CN">简体中文</a>
+      <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="Site navigation">
+      <a class="brand" href="../">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../assets/logo-dark.svg">
+          <img src="../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="side-nav" aria-label="Primary">
+        <a href="../">Home</a>
+        <a href="../guides/" aria-current="page">Guides</a>
+        <a href="../reference/">Reference</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      </nav>
+      <div class="side-utils">
+        <a href="../zh/guides/" lang="zh-CN">简体中文</a>
+        <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+      </div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
+    </aside>
+
+    <main id="main" class="column">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="../">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <span>Guides</span>
+      </nav>
+
+      <h1>Guides</h1>
+      <p>Step-by-step setup guides for shared Linux servers, containers, editors, proxies, and common rootless Tailscale errors.</p>
+
+      <ul class="guide-list">
+        <li><a class="guide-row" href="hpc-slurm/"><span class="guide-row-title">HPC and Slurm clusters</span><span class="guide-row-desc">Shared NFS homes, noexec scratch disks, auth keys, and CentOS&nbsp;7</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="kubernetes-docker/"><span class="guide-row-title">Kubernetes and Docker</span><span class="guide-row-desc">No CAP_NET_ADMIN, /dev/net/tun, or systemd; container UDP GSO off</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="vscode-jupyter-ssh/"><span class="guide-row-title">VS Code, Cursor, and Jupyter</span><span class="guide-row-desc">Port 22 Tailscale SSH, port 2222 OpenSSH, web UIs, and tailscale nc</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="proxy-failover/"><span class="guide-row-title">HTTP proxies and DERP</span><span class="guide-row-desc">Direct/proxy failover, China networks, custom DERP, and peer relays</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="vs-manual-userspace/"><span class="guide-row-title">vs manual tailscaled</span><span class="guide-row-desc">Compare Tailspace with nohup tailscaled and systemd --user</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="troubleshooting/"><span class="guide-row-title">Troubleshooting</span><span class="guide-row-desc">Fixes for /dev/net/tun, systemd, key expiry, noexec, flock, and DERP</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+      </ul>
+
+      <p>Looking for flags, environment variables, or file paths? See the <a href="../reference/">CLI and options reference</a>.</p>
+
+      <footer class="col-footer">
+        <span>Tailspace is a single bash script under the <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT license</a>, and isn't affiliated with Tailscale Inc.</span>
+        <div class="col-footer-links">
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+          <a href="../zh/guides/" lang="zh-CN">简体中文</a>
+          <a href="../llms.txt">llms.txt</a>
+          <a href="../sitemap.xml">sitemap.xml</a>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="../app.js"></script>
+</body>
+</html>

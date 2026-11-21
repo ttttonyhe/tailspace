@@ -96,6 +96,12 @@
         {
           "@type": "ListItem",
           "position": 2,
+          "name": "Guides",
+          "item": "https://ttttonyhe.github.io/tailspace/guides/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
           "name": "HTTP proxy & failover",
           "item": "https://ttttonyhe.github.io/tailspace/guides/proxy-failover/"
         }
@@ -153,18 +159,12 @@
   <div class="mobile-drawer" data-mobile-drawer>
     <nav aria-label="Mobile">
       <a href="../../">Home</a>
+      <a href="../../guides/" aria-current="page">Guides</a>
       <a href="../../reference/">Reference</a>
-      <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
-      <a href="../../guides/kubernetes-docker/">Kubernetes</a>
-      <a href="../../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
-      <a href="../../guides/proxy-failover/" aria-current="page">Proxies &amp; DERP</a>
-      <a href="../../guides/vs-manual-userspace/">Comparison</a>
-      <a href="../../guides/troubleshooting/">Troubleshooting</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
     </nav>
     <div class="mobile-drawer-utils">
       <a href="../../zh/guides/proxy-failover/" lang="zh-CN">简体中文</a>
-      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-      <a href="../../llms.txt">llms.txt</a>
       <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
     </div>
   </div>
@@ -180,26 +180,22 @@
       </a>
       <nav class="side-nav" aria-label="Primary">
         <a href="../../">Home</a>
+        <a href="../../guides/" aria-current="page">Guides</a>
         <a href="../../reference/">Reference</a>
-        <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
-        <a href="../../guides/kubernetes-docker/">Kubernetes</a>
-        <a href="../../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
-        <a href="../../guides/proxy-failover/" aria-current="page">Proxies &amp; DERP</a>
-        <a href="../../guides/vs-manual-userspace/">Comparison</a>
-        <a href="../../guides/troubleshooting/">Troubleshooting</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
       </nav>
       <div class="side-utils">
         <a href="../../zh/guides/proxy-failover/" lang="zh-CN">简体中文</a>
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a href="../../llms.txt">llms.txt</a>
         <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
       </div>
-      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
     </aside>
 
     <main id="main" class="column">
       <nav class="breadcrumb" aria-label="Breadcrumb">
         <a href="../../">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <a href="../../guides/">Guides</a>
         <span aria-hidden="true">/</span>
         <span>HTTP proxy &amp; failover</span>
       </nav>
@@ -243,7 +239,7 @@ tailspace set --proxy none</code></pre>
       </div>
       <p>When a server sits behind hard NAT or reaches the internet only over an HTTP proxy, traffic travels through a relay. Run <code>tailspace status</code> to see whether active peers show <code>relay</code>. Two Tailscale features bring a relay closer:</p>
       <ul class="spec-rows">
-        <li><span class="spec-key"><a href="https://tailscale.com/kb/1118/custom-derp-servers">Custom DERP server</a></span><span class="spec-val">Helps on both paths. You don't need a domain name because <code class="nowrap">derper --certmode manual --hostname IP --verify-clients</code> generates its own certificate and prints the policy lines; run Tailscale on the same VPS so only your tailnet can use it.</span></li>
+        <li><span class="spec-key"><a href="https://tailscale.com/kb/1118/custom-derp-servers">Custom DERP server</a></span><span class="spec-val">Helps on both paths. You don't need a domain name because <code>derper --certmode manual --hostname IP --verify-clients</code> generates its own certificate and prints the policy lines; run Tailscale on the same VPS so only your tailnet can use it.</span></li>
         <li><span class="spec-key"><a href="https://tailscale.com/docs/features/peer-relay">Peer relays</a></span><span class="spec-val">In Tailscale 1.86 and newer, one of your own devices can relay for the others over UDP. Helps only when the server can send UDP out directly, since HTTP proxies don't carry UDP.</span></li>
       </ul>
 
@@ -252,7 +248,7 @@ tailspace set --proxy none</code></pre>
         <h2>Frequently asked questions</h2>
       </div>
       <div class="faq-list">
-        <details open>
+        <details>
           <summary>Why can't Tailscale switch proxies on its own?</summary>
           <div class="faq-body"><p><code>tailscaled</code> reads <code>https_proxy</code> only once at startup. Tailspace probes both paths with <code>tailscale debug ts2021</code> and restarts <code>tailscaled</code> in the working environment whenever the active path breaks.</p></div>
         </details>

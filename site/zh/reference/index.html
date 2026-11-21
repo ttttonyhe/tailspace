@@ -96,7 +96,7 @@
         {
           "@type": "ListItem",
           "position": 2,
-          "name": "完整参考",
+          "name": "参考",
           "item": "https://ttttonyhe.github.io/tailspace/zh/reference/"
         }
       ]
@@ -153,18 +153,12 @@
   <div class="mobile-drawer" data-mobile-drawer>
     <nav aria-label="移动导航">
       <a href="../../zh/">首页</a>
-      <a href="../../zh/reference/" aria-current="page">完整参考</a>
-      <a href="../../zh/guides/hpc-slurm/">超算与 Slurm</a>
-      <a href="../../zh/guides/kubernetes-docker/">Kubernetes</a>
-      <a href="../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
-      <a href="../../zh/guides/proxy-failover/">代理与中继</a>
-      <a href="../../zh/guides/vs-manual-userspace/">方案对比</a>
-      <a href="../../zh/guides/troubleshooting/">故障排查</a>
+      <a href="../../zh/guides/">指南</a>
+      <a href="../../zh/reference/" aria-current="page">参考</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
     </nav>
     <div class="mobile-drawer-utils">
       <a href="../../reference/" lang="en">English</a>
-      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-      <a href="../../llms.txt">llms.txt</a>
       <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
     </div>
   </div>
@@ -180,28 +174,22 @@
       </a>
       <nav class="side-nav" aria-label="主导航">
         <a href="../../zh/">首页</a>
-        <a href="../../zh/reference/" aria-current="page">完整参考</a>
-        <a href="../../zh/guides/hpc-slurm/">超算与 Slurm</a>
-        <a href="../../zh/guides/kubernetes-docker/">Kubernetes</a>
-        <a href="../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
-        <a href="../../zh/guides/proxy-failover/">代理与中继</a>
-        <a href="../../zh/guides/vs-manual-userspace/">方案对比</a>
-        <a href="../../zh/guides/troubleshooting/">故障排查</a>
+        <a href="../../zh/guides/">指南</a>
+        <a href="../../zh/reference/" aria-current="page">参考</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
       </nav>
       <div class="side-utils">
         <a href="../../reference/" lang="en">English</a>
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a href="../../llms.txt">llms.txt</a>
         <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
       </div>
-      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
     </aside>
 
     <main id="main" class="column">
       <nav class="breadcrumb" aria-label="面包屑导航">
         <a href="../../zh/">Tailspace</a>
         <span aria-hidden="true">/</span>
-        <span>完整参考</span>
+        <span>参考</span>
       </nav>
 
       <h1>命令、选项与配置参考</h1>
@@ -253,7 +241,7 @@
 
       <h3>环境变量</h3>
       <ul class="spec-rows">
-        <li><span class="spec-key"><code>TS_AUTHKEY</code></span><span class="spec-val">等同于 <code>--authkey</code>，但密钥不出现在进程列表。配合 0600 文件使用 <code class="nowrap">TS_AUTHKEY=file:/path/to/key</code> 可同时避开 shell 历史。</span></li>
+        <li><span class="spec-key"><code>TS_AUTHKEY</code></span><span class="spec-val">等同于 <code>--authkey</code>，但密钥不出现在进程列表。配合 0600 文件使用 <code>TS_AUTHKEY=file:/path/to/key</code> 可同时避开 shell 历史。</span></li>
         <li><span class="spec-key"><code>TAILSPACE_PREFIX</code></span><span class="spec-val">替代 <code>~/.tailspace</code> 的安装路径，适合家目录挂载 <code>noexec</code> 或不支持文件锁时。后续命令会自己找到新位置。</span></li>
       </ul>
 
@@ -292,17 +280,17 @@
       <p>配合 <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a> 定义 <code>tag:server</code>、放行 <code>autogroup:nonroot</code> 的 Tailscale SSH，并在 Tailscale 1.104+ 上开启 <code>cache-network-maps</code>。常见报错与停止状态见<a href="../guides/troubleshooting/">故障排查</a>。</p>
 
       <div class="section-head" id="faq">
-        <span class="section-tag">常见问题</span>
+        <span class="section-tag">FAQ</span>
         <h2>常见问题</h2>
       </div>
       <div class="faq-list">
-        <details open>
+        <details>
           <summary>如何在不把 auth key 留在 shell 历史和 /proc 里的前提下安装？</summary>
-          <div class="faq-body"><p>把密钥存进权限为 0600 的文件，安装时传入 <code class="nowrap">TS_AUTHKEY=file:/path/to/key</code>。Tailspace 通过管道把密钥交给 <code>tailscale up</code>，不会出现在 <code>/proc/*/cmdline</code>。</p></div>
+          <div class="faq-body"><p>把密钥存进权限为 0600 的文件，安装时传入 <code>TS_AUTHKEY=file:/path/to/key</code>。Tailspace 通过管道把密钥交给 <code>tailscale up</code>，不会出现在 <code>/proc/*/cmdline</code>。</p></div>
         </details>
         <details>
           <summary>如何固定某个 Tailscale 版本并关闭每日更新？</summary>
-          <div class="faq-body"><p>已安装的机器运行 <code class="nowrap">tailspace update 1.104.6</code>，或首次安装时传入 <code>--version 1.104.6</code>，两者都会安装该版本并关闭每日更新。</p></div>
+          <div class="faq-body"><p>已安装的机器运行 <code>tailspace update 1.104.6</code>，或首次安装时传入 <code>--version 1.104.6</code>，两者都会安装该版本并关闭每日更新。</p></div>
         </details>
         <details>
           <summary>如何卸载 Tailspace？</summary>

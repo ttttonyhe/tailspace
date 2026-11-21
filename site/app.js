@@ -83,7 +83,6 @@
     }
   }
 
-  // Mobile navigation drawer
   var menuBtn = document.querySelector("[data-menu-btn]");
   var drawer = document.querySelector("[data-mobile-drawer]");
   if (menuBtn && drawer) {
@@ -103,82 +102,36 @@
     });
   }
 
-  // Interactive terminal install switcher (WAI-ARIA tabs + dual action bar)
-  var boxes = document.querySelectorAll("[data-install-box]");
-  for (var k = 0; k < boxes.length; k++) {
-    (function (box) {
-      var tabs = Array.prototype.slice.call(box.querySelectorAll("[role='tab']"));
-      var panel = box.querySelector("[role='tabpanel']");
-      var commentEl = box.querySelector("[data-cmd-comment]");
-      var codeEl = box.querySelector("[data-cmd-text]");
-      var copyBtn = box.querySelector("[data-copy-btn]");
-      var liveEl = box.querySelector("[data-copy-live]");
-      var copyTimer = null;
+  // Primary install copy button
+  var copyBtns = document.querySelectorAll("[data-copy-btn]");
+  for (var c = 0; c < copyBtns.length; c++) {
+    (function (btn) {
+      var cmdText = btn.getAttribute("data-cmd") || "";
+      var label = btn.getAttribute("data-label") || (isZh ? "复制安装命令" : "Copy install command");
+      var doneLabel = btn.getAttribute("data-copied") || (isZh ? "已复制安装命令" : "Copied install command");
+      var liveEl = btn.parentNode && btn.parentNode.querySelector("[data-copy-live]");
+      var timer = null;
 
-      function setCopyState(copied) {
-        if (!copyBtn) return;
-        var label = copied
-          ? (copyBtn.getAttribute("data-copied") || (isZh ? "已复制安装命令" : "Copied install command"))
-          : (copyBtn.getAttribute("data-label") || (isZh ? "复制安装命令" : "Copy install command"));
-        copyBtn.innerHTML = "<span>" + label + "</span>" + (copied ? ICON_CHECK : ICON_COPY);
-        if (copied) copyBtn.classList.add("copied");
-        else copyBtn.classList.remove("copied");
+      function render(copied) {
+        btn.innerHTML = "<span>" + (copied ? doneLabel : label) + "</span>" + (copied ? ICON_CHECK : ICON_COPY);
+        if (copied) btn.classList.add("copied");
+        else btn.classList.remove("copied");
       }
 
-      setCopyState(false);
-
-      function selectTab(tab, focusTab) {
-        for (var j = 0; j < tabs.length; j++) {
-          var active = tabs[j] === tab;
-          tabs[j].setAttribute("aria-selected", active ? "true" : "false");
-          tabs[j].setAttribute("tabindex", active ? "0" : "-1");
-        }
-        if (panel && tab.id) panel.setAttribute("aria-labelledby", tab.id);
-        if (panel) {
-          panel.classList.add("swapping");
-          setTimeout(function () {
-            if (commentEl) commentEl.textContent = "# " + (tab.getAttribute("data-note") || "");
-            if (codeEl) codeEl.textContent = tab.getAttribute("data-cmd") || "";
-            panel.classList.remove("swapping");
-          }, 70);
-        }
-        if (focusTab) tab.focus();
-      }
-
-      for (var ti = 0; ti < tabs.length; ti++) {
-        (function (idx) {
-          tabs[idx].addEventListener("click", function () {
-            selectTab(tabs[idx], false);
-          });
-          tabs[idx].addEventListener("keydown", function (e) {
-            var nextIdx = null;
-            if (e.key === "ArrowRight") nextIdx = (idx + 1) % tabs.length;
-            else if (e.key === "ArrowLeft") nextIdx = (idx - 1 + tabs.length) % tabs.length;
-            else if (e.key === "Home") nextIdx = 0;
-            else if (e.key === "End") nextIdx = tabs.length - 1;
-            if (nextIdx !== null) {
-              e.preventDefault();
-              selectTab(tabs[nextIdx], true);
-            }
-          });
-        })(ti);
-      }
-
-      if (copyBtn && codeEl) {
-        copyBtn.addEventListener("click", function () {
-          copyText(codeEl.textContent || "", function () {
-            if (copyTimer) clearTimeout(copyTimer);
-            setCopyState(true);
-            if (liveEl) liveEl.textContent = isZh ? "安装命令已复制到剪贴板" : "Install command copied to clipboard";
-            copyTimer = setTimeout(function () {
-              setCopyState(false);
-              if (liveEl) liveEl.textContent = "";
-              copyTimer = null;
-            }, 1800);
-          });
+      render(false);
+      btn.addEventListener("click", function () {
+        copyText(cmdText, function () {
+          if (timer) clearTimeout(timer);
+          render(true);
+          if (liveEl) liveEl.textContent = isZh ? "安装命令已复制到剪贴板" : "Install command copied to clipboard";
+          timer = setTimeout(function () {
+            render(false);
+            if (liveEl) liveEl.textContent = "";
+            timer = null;
+          }, 1800);
         });
-      }
-    })(boxes[k]);
+      });
+    })(copyBtns[c]);
   }
 
   // Copy buttons for standalone <pre><code> blocks

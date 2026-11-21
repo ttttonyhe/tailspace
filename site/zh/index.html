@@ -115,14 +115,6 @@
         },
         {
           "@type": "Question",
-          "name": "在高校或实验室共享服务器上使用安全吗？",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Tailscale 只以你的普通账号运行，~/.tailspace 权限为 700，并且保持无密码的 SOCKS5 与 HTTP 代理关闭，同机其他用户进不了你的 tailnet。用 TS_AUTHKEY=file:/path/to/key 传入密钥，可避免密钥出现在 /proc/*/cmdline。"
-          }
-        },
-        {
-          "@type": "Question",
           "name": "Tailspace 的 CPU 和内存开销有多大？",
           "acceptedAnswer": {
             "@type": "Answer",
@@ -154,18 +146,12 @@
   <div class="mobile-drawer" data-mobile-drawer>
     <nav aria-label="移动导航">
       <a href="../zh/" aria-current="page">首页</a>
-      <a href="../zh/reference/">完整参考</a>
-      <a href="../zh/guides/hpc-slurm/">超算与 Slurm</a>
-      <a href="../zh/guides/kubernetes-docker/">Kubernetes</a>
-      <a href="../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
-      <a href="../zh/guides/proxy-failover/">代理与中继</a>
-      <a href="../zh/guides/vs-manual-userspace/">方案对比</a>
-      <a href="../zh/guides/troubleshooting/">故障排查</a>
+      <a href="../zh/guides/">指南</a>
+      <a href="../zh/reference/">参考</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
     </nav>
     <div class="mobile-drawer-utils">
       <a href="../" lang="en">English</a>
-      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-      <a href="../llms.txt">llms.txt</a>
       <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
     </div>
   </div>
@@ -181,32 +167,24 @@
       </a>
       <nav class="side-nav" aria-label="主导航">
         <a href="../zh/" aria-current="page">首页</a>
-        <a href="../zh/reference/">完整参考</a>
-        <a href="../zh/guides/hpc-slurm/">超算与 Slurm</a>
-        <a href="../zh/guides/kubernetes-docker/">Kubernetes</a>
-        <a href="../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
-        <a href="../zh/guides/proxy-failover/">代理与中继</a>
-        <a href="../zh/guides/vs-manual-userspace/">方案对比</a>
-        <a href="../zh/guides/troubleshooting/">故障排查</a>
+        <a href="../zh/guides/">指南</a>
+        <a href="../zh/reference/">参考</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
       </nav>
       <div class="side-utils">
         <a href="../" lang="en">English</a>
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a href="../llms.txt">llms.txt</a>
         <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
       </div>
-      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
     </aside>
 
     <main id="main" class="column">
       <h1>非 Root 身份运行 Tailscale</h1>
-      <p>在远程 Linux 服务器上常规安装 <a href="https://tailscale.com">Tailscale</a> 需要 root（管理员）权限、<code>sudo</code>、<code>/dev/net/tun</code> 和 <code>systemd</code>。在 HPC 登录节点、Slurm 集群、Kubernetes Pod 或无特权 Docker 容器这类共享服务器上，这些条件通常都没有。</p>
-      <p>Tailspace 会在你的家目录里以 <a href="https://tailscale.com/docs/concepts/userspace-networking">userspace 网络模式</a>和 <code class="nowrap">--tun=userspace-networking</code> 免 root 运行并监管 <code>tailscaled</code>，让你通过 SSH、VS Code Remote-SSH 或 Jupyter 从 tailnet 里的任何设备连上服务器。</p>
+      <p>在远程 Linux 服务器上常规安装 <a href="https://tailscale.com">Tailscale</a> 需要 root（管理员）权限、<code>/dev/net/tun</code> 和 <code>systemd</code>。Tailspace 会在你的家目录里以 <a href="https://tailscale.com/docs/concepts/userspace-networking">userspace 模式</a>免 root 运行并监管 <code>tailscaled</code>，让你从 tailnet 里的任何设备通过 SSH 访问超算节点、Slurm 集群或 Kubernetes Pod。</p>
 
       <div class="hero-actions">
-        <a class="btn btn-primary" href="#install">安装 Tailspace</a>
+        <a class="btn btn-primary" href="#install">安装</a>
         <a class="btn" href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a class="btn" href="reference/">命令参考</a>
       </div>
 
       <figure class="figure">
@@ -217,169 +195,103 @@
       </figure>
 
       <div class="metrics-band" aria-label="124 核 Kubernetes Pod 运行 Tailscale 1.104.7 实测资源占用">
-        <div class="metric-item">
+        <div>
           <div class="metric-label">每个新 shell 增加</div>
           <div class="metric-value">0.9<span class="metric-unit">ms</span></div>
         </div>
-        <div class="metric-item">
+        <div>
           <div class="metric-label">空闲单核 CPU</div>
           <div class="metric-value">0.14<span class="metric-unit">%</span></div>
         </div>
-        <div class="metric-item">
+        <div>
           <div class="metric-label">空闲内存</div>
           <div class="metric-value">30<span class="metric-unit">MB</span></div>
-        </div>
-        <div class="metric-item">
-          <div class="metric-label">userspace 本机吞吐</div>
-          <div class="metric-value">~10<span class="metric-unit">Gbit/s</span></div>
         </div>
       </div>
 
       <div class="section-head" id="install">
         <span class="section-tag">安装</span>
-        <h2>单个 bash 脚本，无需 sudo</h2>
+        <h2>在服务器上运行一行命令</h2>
       </div>
-      <p>在远程服务器上运行安装命令。它会把官方静态二进制文件装到 <code>~/.tailspace</code>，启动监管进程，并打印登录链接和可直接使用的 SSH 命令。</p>
+      <p>打开它打印出的登录链接，完成后就能在你的任何设备上运行给出的 SSH 命令连上服务器。</p>
 
-      <div data-install-box>
-        <div class="terminal">
-          <div class="terminal-bar">
-            <div class="term-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-            <div class="term-tabs" role="tablist" aria-label="安装方式">
-              <button id="zh-tab-default" class="term-tab" role="tab" type="button" aria-selected="true" aria-controls="zh-install-panel" tabindex="0"
-                data-cmd="curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash"
-                data-note="运行后打开登录链接，完成后打印一条可直接使用的 SSH 命令">默认登录</button>
-              <button id="zh-tab-authkey" class="term-tab" role="tab" type="button" aria-selected="false" aria-controls="zh-install-panel" tabindex="-1"
-                data-cmd="curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | TS_AUTHKEY=file:/path/to/key bash -s -- install --hostname lab-07"
-                data-note="适合脚本部署、Slurm 作业或 Kubernetes Pod，密钥不进入 /proc 与历史记录">Auth key</button>
-              <button id="zh-tab-proxy" class="term-tab" role="tab" type="button" aria-selected="false" aria-controls="zh-install-panel" tabindex="-1"
-                data-cmd="export https_proxy=http://127.0.0.1:7890 &amp;&amp; curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash"
-                data-note="保存该 HTTP 代理，用于直连路径与代理路径之间的故障切换">HTTP 代理</button>
-              <button id="zh-tab-prefix" class="term-tab" role="tab" type="button" aria-selected="false" aria-controls="zh-install-panel" tabindex="-1"
-                data-cmd="curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | TAILSPACE_PREFIX=/scratch/$USER/tailspace bash"
-                data-note="家目录挂载为 noexec 或不支持文件锁时，安装到本地 scratch 目录">自定义目录</button>
-            </div>
-          </div>
-          <div id="zh-install-panel" class="term-body" role="tabpanel" aria-labelledby="zh-tab-default">
-            <span class="term-comment" data-cmd-comment># 运行后打开登录链接，完成后打印一条可直接使用的 SSH 命令</span>
-            <div class="term-line"><span class="term-prompt" aria-hidden="true">$</span><span data-cmd-text>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</span><span class="term-cursor" aria-hidden="true"></span></div>
-            <span class="sr-only" aria-live="polite" data-copy-live></span>
-          </div>
-        </div>
-        <div class="term-actions">
-          <button class="term-action" type="button" data-copy-btn data-label="复制安装命令" data-copied="已复制安装命令">
-            <span>复制安装命令</span>
-          </button>
-          <a class="term-action" href="reference/">
-            <span>查看完整命令参考</span>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h6.5V10"/><path d="M12.5 3.5 5 11"/></svg>
-          </a>
+      <div class="terminal">
+        <div class="term-body">
+          <div class="term-line"><span class="term-prompt" aria-hidden="true">$</span><span>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</span><span class="term-cursor" aria-hidden="true"></span></div>
         </div>
       </div>
+      <div class="term-actions">
+        <button class="term-action" type="button" data-copy-btn data-cmd="curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash" data-label="复制安装命令" data-copied="已复制安装命令">
+          <span>复制安装命令</span>
+        </button>
+        <a class="term-action" href="reference/">
+          <span>查看完整参考</span>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h6.5V10"/><path d="M12.5 3.5 5 11"/></svg>
+        </a>
+        <span class="sr-only" aria-live="polite" data-copy-live></span>
+      </div>
+
+      <details class="disclosure">
+        <summary>使用 auth key、HTTP 代理或自定义安装路径</summary>
+        <div class="disclosure-body">
+          <p>用权限 0600 文件中的 auth key 无交互安装：</p>
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | TS_AUTHKEY=file:/path/to/key bash -s -- install --hostname lab-07</code></pre>
+          <p>服务器需要 HTTP 代理上网：</p>
+          <pre><code>export https_proxy=http://127.0.0.1:7890
+curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</code></pre>
+          <p>家目录挂载了 <code>noexec</code> 或不支持文件锁：</p>
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | TAILSPACE_PREFIX=/scratch/$USER/tailspace bash</code></pre>
+        </div>
+      </details>
 
       <div class="note">
-        <p><strong>共享集群请先查看规定。</strong> Tailspace 会让 Tailscale 一直在后台运行，Tailscale SSH 也会绕过集群自己的两步验证，有些集群禁止其中一项或两项。另外，Tailscale 设备密钥默认 180 天后过期，想长期在线请在管理后台<a href="https://tailscale.com/kb/1028/key-expiry">关闭密钥过期</a>。</p>
+        <p><strong>共享集群提醒。</strong> 安装前先确认集群规定，Tailspace 会维持后台进程并绕过集群两步验证。长期使用请在管理后台<a href="https://tailscale.com/kb/1028/key-expiry">关闭 180 天密钥过期</a>。</p>
       </div>
 
       <div class="section-head">
-        <span class="section-tag">监管进程</span>
-        <h2>没有 systemd，依然保持在线</h2>
+        <span class="section-tag">功能</span>
+        <h2>让无 root 的 Tailscale 持续在线</h2>
       </div>
-      <p>没有 root 或 <code>systemd</code>，Tailscale 没法作为系统服务运行。Tailspace 在 <code>tailscaled</code> 旁边运行一个轻量监管进程：</p>
       <ul class="spec-rows">
-        <li>
-          <span class="spec-key">SSH 与本地端口</span>
-          <span class="spec-val">在 22 端口开启 Tailscale SSH，在服务器运行 OpenSSH 时把它转发到 2222 端口，并让你通过 tailnet 访问 8888 端口的 Jupyter 或 6006 端口的 TensorBoard。见 <a href="guides/vscode-jupyter-ssh/">VS Code 与 Jupyter 指南</a>。</span>
-        </li>
-        <li>
-          <span class="spec-key">崩溃与卡死恢复</span>
-          <span class="spec-val"><code>tailscaled</code> 崩溃 5 秒后重启 Tailscale，每 20 秒探测一次状态并在连续 3 次无响应后重启 Tailscale，网络正常却持续离线时也会重启它。</span>
-        </li>
-        <li>
-          <span class="spec-key">服务器重启恢复</span>
-          <span class="spec-val">有 cron 守护进程的服务器上添加用户 cron 任务，其余服务器上在 shell 启动文件里写入耗时 0.9 毫秒的 shell 检查，下次登录即拉起。</span>
-        </li>
-        <li>
-          <span class="spec-key">不中断会话的更新</span>
-          <span class="spec-val">每天检查 Tailscale 新版本，有活动会话时最多等待 3 天，新版本未通过 2 分钟上线检查和 30 秒稳定期就回滚。</span>
-        </li>
-        <li>
-          <span class="spec-key">共享主机隔离</span>
-          <span class="spec-val"><code>~/.tailspace</code> 权限锁定为 700，按主机名在 <code>state/HOSTNAME/</code> 下保存状态支持多机共享 NFS 家目录，并关闭无密码 SOCKS5 与 HTTP 代理。</span>
-        </li>
-        <li>
-          <span class="spec-key">明确的停止原因</span>
-          <span class="spec-val">密钥过期、auth key 无效或连续失败 5 次时会停下，并在 <code>tailspace status</code> 里说明原因，不无休止重试。</span>
-        </li>
+        <li><span class="spec-key">SSH 与本地端口</span><span class="spec-val">22 端口 Tailscale SSH、2222 端口 OpenSSH，直通 Jupyter 等本地端口。</span></li>
+        <li><span class="spec-key">崩溃与服务器重启</span><span class="spec-val">崩溃或无响应时重启 Tailscale，服务器重启后由 cron 或 0.9 毫秒 shell 检查恢复。</span></li>
+        <li><span class="spec-key">HTTP 代理切换</span><span class="spec-val">直连路径与已保存的 HTTP 代理哪条失效就切到另一条。</span></li>
+        <li><span class="spec-key">安全的每日更新</span><span class="spec-val">每天检查更新，有活动会话时最多等待 3 天，新版本异常则回滚。</span></li>
+        <li><span class="spec-key">共享主机隔离</span><span class="spec-val"><code>~/.tailspace</code> 权限 700，NFS 按 <code>state/HOSTNAME/</code> 隔离，关闭本地代理。</span></li>
       </ul>
 
       <div class="section-head">
-        <span class="section-tag">故障切换</span>
-        <h2>直连路径与 HTTP 代理切换</h2>
+        <span class="section-tag">用法</span>
+        <h2>常用命令</h2>
       </div>
-      <p>Tailscale 只在启动时读取一次代理设置。服务器配有 HTTP 代理时，监管进程用 <code>tailscale debug ts2021</code> 探测直连路径和代理路径，哪条断了就切到另一条；从代理切回直连时会等到活动会话结束，累计最多等 3 天。详见 <a href="guides/proxy-failover/">HTTP 代理与中继指南</a>。</p>
-
-      <figure class="figure">
-        <picture>
-          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../assets/paths-dark.svg">
-          <img src="../assets/paths-light.svg" alt="两条泳道的时间线，分别是直连路径和代理路径。服务器起初走直连路径。直连路径不通后，监管进程等待约 4 分钟让 Tailscale 自行恢复，然后切换到代理路径。后来代理路径也不通了，此时直连路径已经恢复，于是等待约 1 分钟后，监管进程切回直连路径。" width="880" height="200">
-        </picture>
-      </figure>
-
-      <div class="section-head" id="guides">
-        <span class="section-tag">专题指南</span>
-        <h2>按运行环境与工作流查看文档</h2>
-      </div>
-      <p>选择贴近你服务器环境的文档：</p>
-
-      <div class="guide-index">
-        <a class="guide-link" href="guides/hpc-slurm/">
-          <div class="guide-link-top"><h3>超算与 Slurm 集群</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
-          <p>共享 NFS 家目录、<code>noexec</code> 本地目录安装、auth key 与 CentOS 7 兼容。</p>
-        </a>
-        <a class="guide-link" href="guides/kubernetes-docker/">
-          <div class="guide-link-top"><h3>Kubernetes 与 Docker</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
-          <p>无需 <code>CAP_NET_ADMIN</code>、<code>/dev/net/tun</code> 与 <code>systemd</code>，容器内关闭 UDP GSO。</p>
-        </a>
-        <a class="guide-link" href="guides/vscode-jupyter-ssh/">
-          <div class="guide-link-top"><h3>VS Code、Cursor 与 Jupyter</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
-          <p>22 端口 Tailscale SSH、2222 端口 OpenSSH、本地 Web 端口直连与 <code>tailscale nc</code>。</p>
-        </a>
-        <a class="guide-link" href="guides/proxy-failover/">
-          <div class="guide-link-top"><h3>HTTP 代理与自建 DERP</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
-          <p>直连与代理切换规则、中国大陆网络、ML-KEM 规避与 Peer Relay。</p>
-        </a>
-        <a class="guide-link" href="guides/vs-manual-userspace/">
-          <div class="guide-link-top"><h3>与手动 tailscaled 对比</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
-          <p>对比手动 <code>nohup tailscaled</code>、<code>systemd --user</code> 与 Tailspace。</p>
-        </a>
-        <a class="guide-link" href="guides/troubleshooting/">
-          <div class="guide-link-top"><h3>故障排查与报错</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
-          <p>解决 <code>/dev/net/tun</code>、<code>systemd</code>、密钥过期、<code>noexec</code>、<code>flock</code> 与 DERP 慢。</p>
-        </a>
-      </div>
-
-      <div class="section-head">
-        <span class="section-tag">命令行</span>
-        <h2>常用命令与系统要求</h2>
-      </div>
-      <p>Tailspace 还会在 <code>~/.local/bin</code> 安装配置好的 <code>tailscale</code> 命令，直接对接你的用户 socket，无需额外参数：</p>
-      <pre><code>tailspace status      # 查看运行状态、当前路径和近期事件
+      <pre><code>tailspace status      # 在做什么，为什么
 tailspace stop        # 停止，服务器重启后也保持停止
 tailspace start       # 重新启动
-tailspace restart     # 重启 Tailscale，通过 Tailscale SSH 运行也能完成
 tailspace self-update # 更新 Tailspace 自身
-tailspace uninstall   # 登出 tailnet 并清理文件、shell 检查与 cron 任务</code></pre>
-      <p>在一台有 124 个可用核心和 1,435 个可见进程、运行 Tailscale 1.104.7 的 Kubernetes Pod 上测得，设 <code>GOMAXPROCS=8</code> 把线程从 57 降到 14，每次状态检查的 CPU 时间从 57 毫秒降到 15 毫秒。系统要求：Linux 3.2+（含 CentOS 7）、<code>bash</code> 4.2+、<code>curl</code> 或 <code>wget</code>，以及 <code>awk</code>、<code>flock</code>、<code>setsid</code>、<code>timeout</code>。详见<a href="reference/">命令与选项参考</a>。</p>
+tailspace uninstall   # 让服务器登出，并删除一切</code></pre>
+      <p>支持 Linux 3.2 及以上内核与 CentOS 7，只需 <code>bash</code> 4.2+ 和普通用户账号。</p>
+
+      <div class="section-head" id="guides">
+        <span class="section-tag">指南</span>
+        <h2>按运行环境查看</h2>
+      </div>
+      <ul class="guide-list">
+        <li><a class="guide-row" href="guides/hpc-slurm/"><span class="guide-row-title">超算与 Slurm 集群</span><span class="guide-row-desc">共享 NFS 家目录、noexec 本地盘、CentOS 7</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="guides/kubernetes-docker/"><span class="guide-row-title">Kubernetes 与 Docker</span><span class="guide-row-desc">无需 CAP_NET_ADMIN、/dev/net/tun 或 systemd</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="guides/vscode-jupyter-ssh/"><span class="guide-row-title">VS Code、Cursor 与 Jupyter</span><span class="guide-row-desc">22 与 2222 端口 SSH、Web 端口、tailscale nc</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="guides/proxy-failover/"><span class="guide-row-title">HTTP 代理与 DERP</span><span class="guide-row-desc">直连/代理切换、自建 DERP、Peer Relay</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="guides/vs-manual-userspace/"><span class="guide-row-title">与手动 tailscaled 对比</span><span class="guide-row-desc">对比 nohup 脚本与 systemd --user</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+        <li><a class="guide-row" href="guides/troubleshooting/"><span class="guide-row-title">故障排查</span><span class="guide-row-desc">/dev/net/tun、systemd、密钥过期与 DERP 慢</span><span class="guide-arrow" aria-hidden="true">&rarr;</span></a></li>
+      </ul>
 
       <div class="section-head" id="faq">
-        <span class="section-tag">常见问题</span>
+        <span class="section-tag">FAQ</span>
         <h2>常见问题</h2>
       </div>
       <div class="faq-list">
-        <details open>
+        <details>
           <summary>没有 root 或 sudo 权限也能安装运行 Tailscale 吗？</summary>
-          <div class="faq-body"><p>可以。Tailspace 从官方源下载静态二进制文件到 <code>~/.tailspace/bin</code>，并以 <code class="nowrap">tailscaled --tun=userspace-networking</code> 运行，不打开 <code>/dev/net/tun</code>，也不需要 <code>sudo</code>、<code>CAP_NET_ADMIN</code> 或 <code>systemd</code>。</p></div>
+          <div class="faq-body"><p>可以。Tailspace 从官方源下载静态二进制文件到 <code>~/.tailspace/bin</code>，并以 <code>tailscaled --tun=userspace-networking</code> 运行，不打开 <code>/dev/net/tun</code>，也不需要 <code>sudo</code>、<code>CAP_NET_ADMIN</code> 或 <code>systemd</code>。</p></div>
         </details>
         <details>
           <summary>没有 systemd，Tailscale 崩溃或服务器重启后能恢复吗？</summary>
@@ -391,11 +303,7 @@ tailspace uninstall   # 登出 tailnet 并清理文件、shell 检查与 cron �
         </details>
         <details>
           <summary>服务器在 HTTP 代理或防火墙后面怎么办？</summary>
-          <div class="faq-body"><p>首次安装前执行 <code class="nowrap">export https_proxy=http://HOST:PORT</code>。Tailspace 会保存这个代理，在直连路径和代理路径哪条失效时切到另一条，直连稳定后再切回。详见 <a href="guides/proxy-failover/">HTTP 代理切换指南</a>。</p></div>
-        </details>
-        <details>
-          <summary>在高校或实验室共享服务器上使用安全吗？</summary>
-          <div class="faq-body"><p>Tailscale 只以你的普通账号运行，<code>~/.tailspace</code> 权限为 700，并且保持无密码的 SOCKS5 与 HTTP 代理关闭，同机其他用户进不了你的 tailnet。用 <code class="nowrap">TS_AUTHKEY=file:/path/to/key</code> 传入密钥，可避免密钥出现在 <code>/proc/*/cmdline</code>。</p></div>
+          <div class="faq-body"><p>首次安装前执行 <code>export https_proxy=http://HOST:PORT</code>。Tailspace 会保存这个代理，在直连路径和代理路径哪条失效时切到另一条，直连稳定后再切回。详见 <a href="guides/proxy-failover/">HTTP 代理切换指南</a>。</p></div>
         </details>
         <details>
           <summary>Tailspace 的 CPU 和内存开销有多大？</summary>

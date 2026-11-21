@@ -153,18 +153,12 @@
   <div class="mobile-drawer" data-mobile-drawer>
     <nav aria-label="Mobile">
       <a href="../">Home</a>
+      <a href="../guides/">Guides</a>
       <a href="../reference/" aria-current="page">Reference</a>
-      <a href="../guides/hpc-slurm/">HPC &amp; Slurm</a>
-      <a href="../guides/kubernetes-docker/">Kubernetes</a>
-      <a href="../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
-      <a href="../guides/proxy-failover/">Proxies &amp; DERP</a>
-      <a href="../guides/vs-manual-userspace/">Comparison</a>
-      <a href="../guides/troubleshooting/">Troubleshooting</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
     </nav>
     <div class="mobile-drawer-utils">
       <a href="../zh/reference/" lang="zh-CN">简体中文</a>
-      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-      <a href="../llms.txt">llms.txt</a>
       <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
     </div>
   </div>
@@ -180,21 +174,15 @@
       </a>
       <nav class="side-nav" aria-label="Primary">
         <a href="../">Home</a>
+        <a href="../guides/">Guides</a>
         <a href="../reference/" aria-current="page">Reference</a>
-        <a href="../guides/hpc-slurm/">HPC &amp; Slurm</a>
-        <a href="../guides/kubernetes-docker/">Kubernetes</a>
-        <a href="../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
-        <a href="../guides/proxy-failover/">Proxies &amp; DERP</a>
-        <a href="../guides/vs-manual-userspace/">Comparison</a>
-        <a href="../guides/troubleshooting/">Troubleshooting</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
       </nav>
       <div class="side-utils">
         <a href="../zh/reference/" lang="zh-CN">简体中文</a>
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a href="../llms.txt">llms.txt</a>
         <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
       </div>
-      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
     </aside>
 
     <main id="main" class="column">
@@ -220,7 +208,7 @@
             <tr><td><code>tailspace start</code></td><td>Start the supervisor and <code>tailscaled</code>.</td></tr>
             <tr><td><code>tailspace stop</code></td><td>Stop Tailscale and the supervisor, and keep them stopped across reboots.</td></tr>
             <tr><td><code>tailspace restart</code></td><td>Restart Tailspace. Finishes even if run over Tailscale SSH while the connection drops.</td></tr>
-            <tr><td><code>tailspace set [options]</code></td><td>Change saved settings without reinstalling, for example <code>tailspace set --no-ssh</code>.</td></tr>
+            <tr><td><code>tailspace set [options]</code></td><td>Change saved settings without reinstalling, like <code>--no-ssh</code>.</td></tr>
             <tr><td><code>tailspace update [VERSION]</code></td><td>Update Tailscale now. Passing a version pins it and turns daily updates off.</td></tr>
             <tr><td><code>tailspace logs [-f]</code></td><td>Show or follow <code>tailscaled.log</code>, like <code>tail -f</code>.</td></tr>
             <tr><td><code>tailspace self-update</code></td><td>Download and install the latest Tailspace from the repository's <code>main</code> branch.</td></tr>
@@ -253,7 +241,7 @@
 
       <h3>Environment variables</h3>
       <ul class="spec-rows">
-        <li><span class="spec-key"><code>TS_AUTHKEY</code></span><span class="spec-val">Same as <code>--authkey</code>, while keeping the key out of the process list. Use <code class="nowrap">TS_AUTHKEY=file:/path/to/key</code> on a mode 0600 file to keep it out of shell history too.</span></li>
+        <li><span class="spec-key"><code>TS_AUTHKEY</code></span><span class="spec-val">Same as <code>--authkey</code>, while keeping the key out of the process list. Use <code>TS_AUTHKEY=file:/path/to/key</code> on a mode 0600 file to keep it out of shell history too.</span></li>
         <li><span class="spec-key"><code>TAILSPACE_PREFIX</code></span><span class="spec-val">Install location instead of <code>~/.tailspace</code>, useful when <code>$HOME</code> is mounted <code>noexec</code> or blocks file locks. Later commands find the new path on their own.</span></li>
       </ul>
 
@@ -296,13 +284,13 @@
         <h2>Frequently asked questions</h2>
       </div>
       <div class="faq-list">
-        <details open>
+        <details>
           <summary>How do I install Tailspace without putting an auth key in shell history or /proc?</summary>
-          <div class="faq-body"><p>Save the key to a mode 0600 file and pass <code class="nowrap">TS_AUTHKEY=file:/path/to/key</code> to the installer. Tailspace passes it to <code>tailscale up</code> through a pipe so it never appears in <code>/proc/*/cmdline</code>.</p></div>
+          <div class="faq-body"><p>Save the key to a mode 0600 file and pass <code>TS_AUTHKEY=file:/path/to/key</code> to the installer. Tailspace passes it to <code>tailscale up</code> through a pipe so it never appears in <code>/proc/*/cmdline</code>.</p></div>
         </details>
         <details>
           <summary>How do I pin a specific Tailscale version and turn off daily updates?</summary>
-          <div class="faq-body"><p>Run <code class="nowrap">tailspace update 1.104.6</code> on an installed server, or pass <code>--version 1.104.6</code> at install time. Both install that release and turn daily updates off.</p></div>
+          <div class="faq-body"><p>Run <code>tailspace update 1.104.6</code> on an installed server, or pass <code>--version 1.104.6</code> at install time. Both install that release and turn daily updates off.</p></div>
         </details>
         <details>
           <summary>How do I uninstall Tailspace cleanly?</summary>

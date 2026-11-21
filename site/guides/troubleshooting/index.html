@@ -96,6 +96,12 @@
         {
           "@type": "ListItem",
           "position": 2,
+          "name": "Guides",
+          "item": "https://ttttonyhe.github.io/tailspace/guides/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
           "name": "Troubleshooting",
           "item": "https://ttttonyhe.github.io/tailspace/guides/troubleshooting/"
         }
@@ -153,18 +159,12 @@
   <div class="mobile-drawer" data-mobile-drawer>
     <nav aria-label="Mobile">
       <a href="../../">Home</a>
+      <a href="../../guides/" aria-current="page">Guides</a>
       <a href="../../reference/">Reference</a>
-      <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
-      <a href="../../guides/kubernetes-docker/">Kubernetes</a>
-      <a href="../../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
-      <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
-      <a href="../../guides/vs-manual-userspace/">Comparison</a>
-      <a href="../../guides/troubleshooting/" aria-current="page">Troubleshooting</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
     </nav>
     <div class="mobile-drawer-utils">
       <a href="../../zh/guides/troubleshooting/" lang="zh-CN">简体中文</a>
-      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-      <a href="../../llms.txt">llms.txt</a>
       <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
     </div>
   </div>
@@ -180,26 +180,22 @@
       </a>
       <nav class="side-nav" aria-label="Primary">
         <a href="../../">Home</a>
+        <a href="../../guides/" aria-current="page">Guides</a>
         <a href="../../reference/">Reference</a>
-        <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
-        <a href="../../guides/kubernetes-docker/">Kubernetes</a>
-        <a href="../../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
-        <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
-        <a href="../../guides/vs-manual-userspace/">Comparison</a>
-        <a href="../../guides/troubleshooting/" aria-current="page">Troubleshooting</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
       </nav>
       <div class="side-utils">
         <a href="../../zh/guides/troubleshooting/" lang="zh-CN">简体中文</a>
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a href="../../llms.txt">llms.txt</a>
         <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
       </div>
-      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
     </aside>
 
     <main id="main" class="column">
       <nav class="breadcrumb" aria-label="Breadcrumb">
         <a href="../../">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <a href="../../guides/">Guides</a>
         <span aria-hidden="true">/</span>
         <span>Troubleshooting</span>
       </nav>
@@ -212,12 +208,12 @@
         <h2>Common errors and fixes</h2>
       </div>
       <ul class="spec-rows">
-        <li><span class="spec-key"><code>failed to open /dev/net/tun</code></span><span class="spec-val">Standard Tailscale installs require root and <code>CAP_NET_ADMIN</code> to open a kernel TUN device. Install Tailspace instead; it always launches <code class="nowrap">tailscaled --tun=userspace-networking</code> and never touches <code>/dev/net/tun</code>.</span></li>
+        <li><span class="spec-key"><code>failed to open /dev/net/tun</code></span><span class="spec-val">Standard Tailscale installs require root and <code>CAP_NET_ADMIN</code> to open a kernel TUN device. Install Tailspace instead; it always launches <code>tailscaled --tun=userspace-networking</code> and never touches <code>/dev/net/tun</code>.</span></li>
         <li><span class="spec-key"><code>System has not been booted with systemd</code></span><span class="spec-val">Occurs when running <code>systemctl --user</code> in containers or older hosts. Tailspace doesn't use <code>systemd</code>; its supervisor runs as a plain user process and recovers via cron and your shell check.</span></li>
-        <li><span class="spec-key">Can't reach <code>controlplane.tailscale.com</code></span><span class="spec-val">The server needs an HTTP proxy. Export <code class="nowrap">https_proxy=http://HOST:PORT</code> before installing, or run <code>tailspace set --proxy http://HOST:PORT</code>. See the <a href="../proxy-failover/">proxy guide</a>.</span></li>
+        <li><span class="spec-key">Can't reach <code>controlplane.tailscale.com</code></span><span class="spec-val">The server needs an HTTP proxy. Export <code>https_proxy=http://HOST:PORT</code> before installing, or run <code>tailspace set --proxy http://HOST:PORT</code>. See the <a href="../proxy-failover/">proxy guide</a>.</span></li>
         <li><span class="spec-key">Tailscale SSH refuses login</span><span class="spec-val">Verify your tailnet policy has an <code>ssh</code> rule with <code>autogroup:nonroot</code> as in <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a>, and connect as the account that installed Tailspace.</span></li>
         <li><span class="spec-key">Nothing runs after a reboot</span><span class="spec-val">The server has no cron daemon and nobody has opened a shell since the reboot. Log in once through the cluster's normal SSH or <code>kubectl exec</code> so the shell check starts Tailspace.</span></li>
-        <li><span class="spec-key"><code>tailscaled</code> won't run / <code>noexec</code></span><span class="spec-val">Your home directory doesn't allow running binaries, blocks <code>flock</code>, or makes socket paths too long. Reinstall to a short local path with <code class="nowrap">TAILSPACE_PREFIX=/scratch/$USER/tailspace</code>.</span></li>
+        <li><span class="spec-key"><code>tailscaled</code> won't run / <code>noexec</code></span><span class="spec-val">Your home directory doesn't allow running binaries, blocks <code>flock</code>, or makes socket paths too long. Reinstall to a short local path with <code>TAILSPACE_PREFIX=/scratch/$USER/tailspace</code>.</span></li>
         <li><span class="spec-key">Slow transfers or laggy typing</span><span class="spec-val">Run <code>tailspace status</code>. If an active device shows <code>relay</code>, traffic is using a distant DERP server. Set up a <a href="../proxy-failover/">custom DERP server or peer relay</a>.</span></li>
       </ul>
 
@@ -245,13 +241,13 @@
         <h2>Frequently asked questions</h2>
       </div>
       <div class="faq-list">
-        <details open>
+        <details>
           <summary>How do I recover a remote Tailspace server whose 180-day key expired?</summary>
           <div class="faq-body"><p>In Tailscale's admin console on the Machines page, choose Temporarily extend key and disable key expiry within 30 minutes. Then reboot the server or wait for its next reboot; Tailspace clears login give-ups across reboots and reconnects via cron or the next shell login.</p></div>
         </details>
         <details>
           <summary>Why does install say file locks don't work or a path is too long?</summary>
-          <div class="faq-body"><p>Some network filesystems don't grant exclusive <code>flock</code> locks or place <code>$HOME</code> under a deep path that exceeds Unix socket limits. Install to a short local path with <code class="nowrap">TAILSPACE_PREFIX=/tmp/$USER/ts</code> or <code>/scratch/$USER/tailspace</code>.</p></div>
+          <div class="faq-body"><p>Some network filesystems don't grant exclusive <code>flock</code> locks or place <code>$HOME</code> under a deep path that exceeds Unix socket limits. Install to a short local path with <code>TAILSPACE_PREFIX=/tmp/$USER/ts</code> or <code>/scratch/$USER/tailspace</code>.</p></div>
         </details>
         <details>
           <summary>Why did Tailspace stop after 5 failures in a row?</summary>

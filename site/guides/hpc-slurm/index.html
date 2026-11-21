@@ -96,6 +96,12 @@
         {
           "@type": "ListItem",
           "position": 2,
+          "name": "Guides",
+          "item": "https://ttttonyhe.github.io/tailspace/guides/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
           "name": "HPC & Slurm",
           "item": "https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/"
         }
@@ -153,18 +159,12 @@
   <div class="mobile-drawer" data-mobile-drawer>
     <nav aria-label="Mobile">
       <a href="../../">Home</a>
+      <a href="../../guides/" aria-current="page">Guides</a>
       <a href="../../reference/">Reference</a>
-      <a href="../../guides/hpc-slurm/" aria-current="page">HPC &amp; Slurm</a>
-      <a href="../../guides/kubernetes-docker/">Kubernetes</a>
-      <a href="../../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
-      <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
-      <a href="../../guides/vs-manual-userspace/">Comparison</a>
-      <a href="../../guides/troubleshooting/">Troubleshooting</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
     </nav>
     <div class="mobile-drawer-utils">
       <a href="../../zh/guides/hpc-slurm/" lang="zh-CN">简体中文</a>
-      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-      <a href="../../llms.txt">llms.txt</a>
       <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
     </div>
   </div>
@@ -180,26 +180,22 @@
       </a>
       <nav class="side-nav" aria-label="Primary">
         <a href="../../">Home</a>
+        <a href="../../guides/" aria-current="page">Guides</a>
         <a href="../../reference/">Reference</a>
-        <a href="../../guides/hpc-slurm/" aria-current="page">HPC &amp; Slurm</a>
-        <a href="../../guides/kubernetes-docker/">Kubernetes</a>
-        <a href="../../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
-        <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
-        <a href="../../guides/vs-manual-userspace/">Comparison</a>
-        <a href="../../guides/troubleshooting/">Troubleshooting</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
       </nav>
       <div class="side-utils">
         <a href="../../zh/guides/hpc-slurm/" lang="zh-CN">简体中文</a>
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a href="../../llms.txt">llms.txt</a>
         <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
       </div>
-      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
     </aside>
 
     <main id="main" class="column">
       <nav class="breadcrumb" aria-label="Breadcrumb">
         <a href="../../">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <a href="../../guides/">Guides</a>
         <span aria-hidden="true">/</span>
         <span>HPC &amp; Slurm</span>
       </nav>
@@ -254,13 +250,13 @@ curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace 
         <h2>Frequently asked questions</h2>
       </div>
       <div class="faq-list">
-        <details open>
+        <details>
           <summary>Can multiple HPC nodes share the same NFS home directory with Tailspace?</summary>
           <div class="faq-body"><p>Yes. Each server keeps its own state, lock, and log under <code>~/.tailspace/state/HOSTNAME/</code>, so multiple nodes sharing an NFS home directory share one installation while joining your tailnet as separate devices.</p></div>
         </details>
         <details>
           <summary>What if my HPC home directory is mounted noexec or breaks flock?</summary>
-          <div class="faq-body"><p>Set <code class="nowrap">TAILSPACE_PREFIX=/scratch/$USER/tailspace</code>, or another short path on a local disk, during install. Later <code>tailspace</code> commands find that location on their own.</p></div>
+          <div class="faq-body"><p>Set <code>TAILSPACE_PREFIX=/scratch/$USER/tailspace</code>, or another short path on a local disk, during install. Later <code>tailspace</code> commands find that location on their own.</p></div>
         </details>
         <details>
           <summary>Does Tailspace work on older HPC clusters running CentOS 7?</summary>

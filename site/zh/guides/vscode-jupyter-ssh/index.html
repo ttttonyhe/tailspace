@@ -96,6 +96,12 @@
         {
           "@type": "ListItem",
           "position": 2,
+          "name": "指南",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/guides/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
           "name": "VS Code 与 Jupyter",
           "item": "https://ttttonyhe.github.io/tailspace/zh/guides/vscode-jupyter-ssh/"
         }
@@ -153,18 +159,12 @@
   <div class="mobile-drawer" data-mobile-drawer>
     <nav aria-label="移动导航">
       <a href="../../../zh/">首页</a>
-      <a href="../../../zh/reference/">完整参考</a>
-      <a href="../../../zh/guides/hpc-slurm/">超算与 Slurm</a>
-      <a href="../../../zh/guides/kubernetes-docker/">Kubernetes</a>
-      <a href="../../../zh/guides/vscode-jupyter-ssh/" aria-current="page">VS Code 与 Jupyter</a>
-      <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
-      <a href="../../../zh/guides/vs-manual-userspace/">方案对比</a>
-      <a href="../../../zh/guides/troubleshooting/">故障排查</a>
+      <a href="../../../zh/guides/" aria-current="page">指南</a>
+      <a href="../../../zh/reference/">参考</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
     </nav>
     <div class="mobile-drawer-utils">
       <a href="../../../guides/vscode-jupyter-ssh/" lang="en">English</a>
-      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-      <a href="../../../llms.txt">llms.txt</a>
       <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
     </div>
   </div>
@@ -180,26 +180,22 @@
       </a>
       <nav class="side-nav" aria-label="主导航">
         <a href="../../../zh/">首页</a>
-        <a href="../../../zh/reference/">完整参考</a>
-        <a href="../../../zh/guides/hpc-slurm/">超算与 Slurm</a>
-        <a href="../../../zh/guides/kubernetes-docker/">Kubernetes</a>
-        <a href="../../../zh/guides/vscode-jupyter-ssh/" aria-current="page">VS Code 与 Jupyter</a>
-        <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
-        <a href="../../../zh/guides/vs-manual-userspace/">方案对比</a>
-        <a href="../../../zh/guides/troubleshooting/">故障排查</a>
+        <a href="../../../zh/guides/" aria-current="page">指南</a>
+        <a href="../../../zh/reference/">参考</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
       </nav>
       <div class="side-utils">
         <a href="../../../guides/vscode-jupyter-ssh/" lang="en">English</a>
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a href="../../../llms.txt">llms.txt</a>
         <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
       </div>
-      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__</span></div>
     </aside>
 
     <main id="main" class="column">
       <nav class="breadcrumb" aria-label="面包屑导航">
         <a href="../../../zh/">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <a href="../../../zh/guides/">指南</a>
         <span aria-hidden="true">/</span>
         <span>VS Code 与 Jupyter</span>
       </nav>
@@ -249,11 +245,11 @@
       <p>之后 <code>ssh lab-01</code>、<code>scp</code>、<code>rsync</code> 和 <code>git</code> 都能按名字连到其他 Tailspace 服务器。带 <code>tag:server</code> 标签的服务器互访需取消 <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a> 中允许 <code>tag:server</code> 访问 <code>tag:server</code> 一行的注释。Tailspace 不开启无密码的 SOCKS5 和 HTTP 代理，以免同机其他用户接入你的 tailnet。</p>
 
       <div class="section-head" id="faq">
-        <span class="section-tag">常见问题</span>
+        <span class="section-tag">FAQ</span>
         <h2>常见问题</h2>
       </div>
       <div class="faq-list">
-        <details open>
+        <details>
           <summary>为什么 Tailscale SSH 每 12 小时要我在浏览器重新登录一次？</summary>
           <div class="faq-body"><p>Tailscale 的默认 SSH 策略采用 check 模式，每 12 小时要求复验一次。把策略 <code>ssh</code> 规则里的 <code>"check"</code> 改成 <code>"accept"</code> 即可，就像 <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a> 对 <code>tag:server</code> 做的那样。</p></div>
         </details>
