@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>命令、选项与配置参考 · Tailspace</title>
+  <meta name="description" content="Tailspace 全部 CLI 命令、install 与 set 选项、TS_AUTHKEY 与 TAILSPACE_PREFIX 环境变量、目录结构与 Tailscale 调优参数。">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/zh/reference/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/reference/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/reference/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/reference/">
+  <link rel="icon" href="../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="命令、选项与配置参考 · Tailspace">
+  <meta property="og:description" content="Tailspace 全部 CLI 命令、install 与 set 选项、TS_AUTHKEY 与 TAILSPACE_PREFIX 环境变量、目录结构与 Tailscale 调优参数。">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/zh/reference/">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace：非 Root 身份运行 Tailscale">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="命令、选项与配置参考 · Tailspace">
+  <meta name="twitter:description" content="Tailspace 全部 CLI 命令、install 与 set 选项、TS_AUTHKEY 与 TAILSPACE_PREFIX 环境变量、目录结构与 Tailscale 调优参数。">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../styles.css">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://ttttonyhe.github.io/tailspace/#website",
+      "name": "Tailspace",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "inLanguage": [
+        "en",
+        "zh-CN"
+      ],
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://ttttonyhe.github.io/tailspace/#author",
+      "name": "Tony L. He",
+      "url": "https://lipeng.ac"
+    },
+    {
+      "@type": "TechArticle",
+      "inLanguage": "zh-CN",
+      "headline": "命令、选项与配置参考",
+      "description": "Tailspace 全部 CLI 命令、install 与 set 选项、TS_AUTHKEY 与 TAILSPACE_PREFIX 环境变量、目录结构与 Tailscale 调优参数。",
+      "url": "https://ttttonyhe.github.io/tailspace/zh/reference/",
+      "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/zh/reference/",
+      "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+      "datePublished": "2026-11-20",
+      "dateModified": "2026-11-20",
+      "author": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Tailspace"
+        },
+        {
+          "@type": "Thing",
+          "name": "Tailscale CLI"
+        },
+        {
+          "@type": "Thing",
+          "name": "Linux administration"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Tailspace",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "完整参考",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/reference/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "如何在不把 auth key 留在 shell 历史和 /proc 里的前提下安装？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "把密钥存进权限为 0600 的文件，安装时传入 TS_AUTHKEY=file:/path/to/key。Tailspace 通过管道把密钥交给 tailscale up，不会出现在 /proc/*/cmdline。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "如何固定某个 Tailscale 版本并关闭每日更新？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "已安装的机器运行 tailspace update 1.104.6，或首次安装时传入 --version 1.104.6，两者都会安装该版本并关闭每日更新。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "如何卸载 Tailspace？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "运行 tailspace uninstall。它会让服务器登出 tailnet、停止监管进程和 tailscaled，并移除文件、shell 检查和用户 crontab；如果还有其他节点共用这个前缀，会保留它们需要的共享文件。"
+          }
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+
+  <header class="mobile-bar">
+    <a class="brand" href="../../zh/">
+      <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="切换导航">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="移动导航">
+      <a href="../../zh/">首页</a>
+      <a href="../../zh/reference/" aria-current="page">完整参考</a>
+      <a href="../../zh/guides/hpc-slurm/">超算与 Slurm</a>
+      <a href="../../zh/guides/kubernetes-docker/">Kubernetes</a>
+      <a href="../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
+      <a href="../../zh/guides/proxy-failover/">代理与中继</a>
+      <a href="../../zh/guides/vs-manual-userspace/">方案对比</a>
+      <a href="../../zh/guides/troubleshooting/">故障排查</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="../../reference/" lang="en">English</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      <a href="../../llms.txt">llms.txt</a>
+      <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="站点导航">
+      <a class="brand" href="../../zh/">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="side-nav" aria-label="主导航">
+        <a href="../../zh/">首页</a>
+        <a href="../../zh/reference/" aria-current="page">完整参考</a>
+        <a href="../../zh/guides/hpc-slurm/">超算与 Slurm</a>
+        <a href="../../zh/guides/kubernetes-docker/">Kubernetes</a>
+        <a href="../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
+        <a href="../../zh/guides/proxy-failover/">代理与中继</a>
+        <a href="../../zh/guides/vs-manual-userspace/">方案对比</a>
+        <a href="../../zh/guides/troubleshooting/">故障排查</a>
+      </nav>
+      <div class="side-utils">
+        <a href="../../reference/" lang="en">English</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <a href="../../llms.txt">llms.txt</a>
+        <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
+      </div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+    </aside>
+
+    <main id="main" class="column">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="../../zh/">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <span>完整参考</span>
+      </nav>
+
+      <h1>命令、选项与配置参考</h1>
+      <p>Tailspace 是一个装在 <code>~/.tailspace</code> 的单文件 bash 脚本，并在 <code>~/.local/bin</code> 链接了 <code>tailspace</code> 和 <code>tailscale</code>。下面列出全部命令、选项、环境变量、目录结构和 Tailscale 调整项，与 <a href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.zh-CN.md">ADVANCED.zh-CN.md</a> 保持一致。</p>
+
+      <div class="section-head">
+        <span class="section-tag">命令</span>
+        <h2>CLI 子命令</h2>
+      </div>
+      <div class="table-wrap table-nowrap-first">
+        <table>
+          <thead><tr><th>命令</th><th>作用</th></tr></thead>
+          <tbody>
+            <tr><td><code>tailspace install [选项]</code></td><td>安装 Tailspace 并加入 tailnet，可安全重复运行并保留已保存设置。</td></tr>
+            <tr><td><code>tailspace status</code></td><td>查看运行状态、当前路径、是否有等待中的更新以及近期事件。</td></tr>
+            <tr><td><code>tailspace start</code></td><td>启动监管进程与 <code>tailscaled</code>。</td></tr>
+            <tr><td><code>tailspace stop</code></td><td>停止 Tailscale 和监管进程，服务器重启后也保持停止。</td></tr>
+            <tr><td><code>tailspace restart</code></td><td>重启 Tailscale，即使通过 Tailscale SSH 运行也能完成。</td></tr>
+            <tr><td><code>tailspace set [选项]</code></td><td>不重装直接修改设置，例如 <code>tailspace set --no-ssh</code>。</td></tr>
+            <tr><td><code>tailspace update [版本]</code></td><td>立即更新 Tailscale。传入版本号会固定该版本并关闭每日更新。</td></tr>
+            <tr><td><code>tailspace logs [-f]</code></td><td>查看或持续跟踪 <code>tailscaled.log</code>，类似 <code>tail -f</code>。</td></tr>
+            <tr><td><code>tailspace self-update</code></td><td>从仓库 <code>main</code> 分支下载并更新 Tailspace 自身。</td></tr>
+            <tr><td><code>tailspace uninstall</code></td><td>登出 tailnet，停止 Tailspace，并删除文件、cron 任务与 shell 检查。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-head">
+        <span class="section-tag">选项</span>
+        <h2>install 与 set 选项</h2>
+      </div>
+      <div class="table-wrap table-nowrap-first">
+        <table>
+          <thead><tr><th>选项</th><th>默认值</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td><code>--authkey KEY</code></td><td></td><td>auth key 或 <code>file:PATH</code>，仅限安装。建议用 <code>TS_AUTHKEY</code> 避开 <code>/proc/*/cmdline</code>。</td></tr>
+            <tr><td><code>--tags TAGS</code></td><td></td><td>服务器标签如 <code>tag:server</code>，仅限安装。用 OAuth client secret 时必填。</td></tr>
+            <tr><td><code>--version VERSION</code></td><td>最新版</td><td>安装指定 Tailscale 版本并关闭每日更新，仅限安装。</td></tr>
+            <tr><td><code>--hostname NAME</code></td><td>主机名</td><td>服务器在你 tailnet 里的名字。</td></tr>
+            <tr><td><code>--proxy URL | none</code></td><td><code>https_proxy</code></td><td>代理路径使用的 HTTP 代理或 <code>none</code>，只支持 <code>http://</code>。</td></tr>
+            <tr><td><code>--udp-port PORT</code></td><td>0</td><td>直连用的 UDP 端口，1024 到 65535，需要在防火墙放行时指定。</td></tr>
+            <tr><td><code>--[no-]autostart</code></td><td>开</td><td>管理服务器重启后恢复运行的 shell 检查和用户 cron 任务。</td></tr>
+            <tr><td><code>--[no-]auto-update</code></td><td>开</td><td>每日 Tailscale 更新，有会话时最多等 3 天，失败则回滚。</td></tr>
+            <tr><td><code>--[no-]ssh</code></td><td>开</td><td>22 端口 Tailscale SSH，2222 端口 OpenSSH。关闭后 22 端口通往 OpenSSH。</td></tr>
+            <tr><td><code>--[no-]log-upload</code></td><td>开</td><td>向 Tailscale 上传诊断日志，开启网络流日志的 tailnet 必须保持开启。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>环境变量</h3>
+      <ul class="spec-rows">
+        <li><span class="spec-key"><code>TS_AUTHKEY</code></span><span class="spec-val">等同于 <code>--authkey</code>，但密钥不出现在进程列表。配合 0600 文件使用 <code class="nowrap">TS_AUTHKEY=file:/path/to/key</code> 可同时避开 shell 历史。</span></li>
+        <li><span class="spec-key"><code>TAILSPACE_PREFIX</code></span><span class="spec-val">替代 <code>~/.tailspace</code> 的安装路径，适合家目录挂载 <code>noexec</code> 或不支持文件锁时。后续命令会自己找到新位置。</span></li>
+      </ul>
+
+      <div class="section-head">
+        <span class="section-tag">文件</span>
+        <h2>目录结构与共享家目录</h2>
+      </div>
+      <pre><code>~/.tailspace/
+  tailspace           Tailspace 本身，shell 检查和 cron 任务运行这一份
+  bin/                tailscale 和 tailscaled 程序
+  bin.prev/           上一个版本的 Tailscale，用于回滚
+  config              已保存的设置
+  bad-version         更新后未通过健康检查的版本
+  state/HOSTNAME/     属于某一台服务器的全部内容
+    tailscaled.state  服务器在你 tailnet 里的身份
+    tailscaled.log    日志，超过 10 MB 后重新开始
+~/.local/bin/         tailspace 和 tailscale 命令</code></pre>
+      <p>共用 NFS 家目录的节点共用一个 <code>~/.tailspace</code>，按主机名在 <code>state/HOSTNAME/</code> 下隔离状态。详见<a href="../guides/hpc-slurm/">超算与 Slurm 指南</a>。</p>
+
+      <div class="section-head">
+        <span class="section-tag">调优</span>
+        <h2>Tailspace 对 Tailscale 做的调整</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>调整</th><th>原因</th></tr></thead>
+          <tbody>
+            <tr><td>可用核心 &gt; 8 时 <code>GOMAXPROCS=8</code></td><td>在 124 核 Pod 上把线程从 57 降到 14，状态检查 CPU 时间从 57 毫秒降到 15 毫秒。</td></tr>
+            <tr><td><code>TS_PORTLIST=false</code></td><td>不再每秒扫描开放端口，这份列表只在管理后台显示。</td></tr>
+            <tr><td>TCP keepalive 60 秒后每 15 秒</td><td>连向已消失设备的连接在几分钟内关闭，而不是两小时。</td></tr>
+            <tr><td>容器内关闭 UDP GSO</td><td>避免容器虚拟网卡上的吞吐骤降，见 <a href="https://github.com/tailscale/tailscale/issues/20858">tailscale#20858</a>。</td></tr>
+            <tr><td><code>GODEBUG=tlsmlkem=0</code></td><td>防止中间网络丢弃 ML-KEM TLS 握手，见 <a href="https://github.com/tailscale/tailscale/issues/20777">tailscale#20777</a>。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>配合 <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a> 定义 <code>tag:server</code>、放行 <code>autogroup:nonroot</code> 的 Tailscale SSH，并在 Tailscale 1.104+ 上开启 <code>cache-network-maps</code>。常见报错与停止状态见<a href="../guides/troubleshooting/">故障排查</a>。</p>
+
+      <div class="section-head" id="faq">
+        <span class="section-tag">常见问题</span>
+        <h2>常见问题</h2>
+      </div>
+      <div class="faq-list">
+        <details open>
+          <summary>如何在不把 auth key 留在 shell 历史和 /proc 里的前提下安装？</summary>
+          <div class="faq-body"><p>把密钥存进权限为 0600 的文件，安装时传入 <code class="nowrap">TS_AUTHKEY=file:/path/to/key</code>。Tailspace 通过管道把密钥交给 <code>tailscale up</code>，不会出现在 <code>/proc/*/cmdline</code>。</p></div>
+        </details>
+        <details>
+          <summary>如何固定某个 Tailscale 版本并关闭每日更新？</summary>
+          <div class="faq-body"><p>已安装的机器运行 <code class="nowrap">tailspace update 1.104.6</code>，或首次安装时传入 <code>--version 1.104.6</code>，两者都会安装该版本并关闭每日更新。</p></div>
+        </details>
+        <details>
+          <summary>如何卸载 Tailspace？</summary>
+          <div class="faq-body"><p>运行 <code>tailspace uninstall</code>。它会让服务器登出 tailnet、停止监管进程和 <code>tailscaled</code>，并移除文件、shell 检查和用户 crontab；如果还有其他节点共用这个前缀，会保留它们需要的共享文件。</p></div>
+        </details>
+      </div>
+
+      <footer class="col-footer">
+        <span>Tailspace 以 <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT 许可证</a>发布，与 Tailscale Inc. 没有关联。</span>
+        <div class="col-footer-links">
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+          <a href="../../reference/" lang="en">English</a>
+          <a href="../../llms.txt">llms.txt</a>
+          <a href="../../sitemap.xml">sitemap.xml</a>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="../../app.js"></script>
+</body>
+</html>

@@ -59,6 +59,6 @@ tailspace self-update # update Tailspace itself
 tailspace uninstall   # log the server out and remove everything
 ```
 
-See [ADVANCED.md](ADVANCED.md) for auth keys, proxies, settings, and reference details. Guides for [HPC and Slurm](https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/), [Kubernetes and Docker](https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/), [HTTP proxy failover](https://ttttonyhe.github.io/tailspace/guides/proxy-failover/), and [comparing Tailspace with manual userspace setups](https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/) live on the [project site](https://ttttonyhe.github.io/tailspace/).
+See [ADVANCED.md](ADVANCED.md) for auth keys, proxies, settings, and reference details. The [project site](https://ttttonyhe.github.io/tailspace/) adds the [CLI reference](https://ttttonyhe.github.io/tailspace/reference/) and guides for [HPC and Slurm](https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/), [Kubernetes and Docker](https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/), [VS Code and Jupyter](https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/), [HTTP proxy failover](https://ttttonyhe.github.io/tailspace/guides/proxy-failover/), [comparing with manual setups](https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/), and [troubleshooting](https://ttttonyhe.github.io/tailspace/guides/troubleshooting/).
 
 Tailspace is a single bash script under the [MIT license](LICENSE), and isn't affiliated with Tailscale Inc.

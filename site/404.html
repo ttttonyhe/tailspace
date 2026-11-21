@@ -14,47 +14,86 @@
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
 
-  <header class="site-header">
-    <div class="wrap header-inner">
+  <header class="mobile-bar">
+    <a class="brand" href="/tailspace/">
+      <picture>
+        <source data-theme-source media="(prefers-color-scheme: dark)" srcset="/tailspace/assets/logo-dark.svg">
+        <img src="/tailspace/assets/logo-light.svg" alt="" width="20" height="20">
+      </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="Toggle navigation">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="Mobile">
+      <a href="/tailspace/">Home</a>
+      <a href="/tailspace/reference/">Reference</a>
+      <a href="/tailspace/guides/hpc-slurm/">HPC &amp; Slurm</a>
+      <a href="/tailspace/guides/kubernetes-docker/">Kubernetes</a>
+      <a href="/tailspace/guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
+      <a href="/tailspace/guides/proxy-failover/">Proxies &amp; DERP</a>
+      <a href="/tailspace/guides/vs-manual-userspace/">Comparison</a>
+      <a href="/tailspace/guides/troubleshooting/">Troubleshooting</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="/tailspace/zh/" lang="zh-CN">简体中文</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="Site navigation">
       <a class="brand" href="/tailspace/">
         <picture>
           <source data-theme-source media="(prefers-color-scheme: dark)" srcset="/tailspace/assets/logo-dark.svg">
-          <img src="/tailspace/assets/logo-light.svg" alt="" width="28" height="28">
+          <img src="/tailspace/assets/logo-light.svg" alt="" width="20" height="20">
         </picture>
         <span>Tailspace</span>
       </a>
-      <nav class="nav" aria-label="Primary">
+      <nav class="side-nav" aria-label="Primary">
         <a href="/tailspace/">Home</a>
-        <a href="/tailspace/guides/hpc-slurm/">Guides</a>
-        <a href="/tailspace/zh/" lang="zh-CN">简体中文</a>
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <button id="theme-toggle" class="theme-btn" type="button">dark</button>
+        <a href="/tailspace/reference/">Reference</a>
+        <a href="/tailspace/guides/hpc-slurm/">HPC &amp; Slurm</a>
+        <a href="/tailspace/guides/kubernetes-docker/">Kubernetes</a>
+        <a href="/tailspace/guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
+        <a href="/tailspace/guides/proxy-failover/">Proxies &amp; DERP</a>
+        <a href="/tailspace/guides/vs-manual-userspace/">Comparison</a>
+        <a href="/tailspace/guides/troubleshooting/">Troubleshooting</a>
       </nav>
-    </div>
-  </header>
-
-  <main id="main" class="wrap">
-    <div class="kicker"><span class="pulse-dot" aria-hidden="true"></span><span>HTTP 404</span></div>
-    <h1>Page not found</h1>
-    <p class="lead">That path doesn't exist on the Tailspace site. Go back to the homepage, open a guide, or visit the GitHub repository.</p>
-    <div class="actions">
-      <a class="btn btn-primary" href="/tailspace/">English homepage</a>
-      <a class="btn" href="/tailspace/zh/" lang="zh-CN">简体中文主页</a>
-      <a class="btn" href="/tailspace/guides/hpc-slurm/">HPC and Slurm guide</a>
-      <a class="btn" href="https://github.com/ttttonyhe/tailspace">GitHub repository</a>
-    </div>
-  </main>
-
-  <footer class="site-footer">
-    <div class="wrap footer-inner">
-      <span>Tailspace is a single bash script under the <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT license</a>, and isn't affiliated with Tailscale Inc.</span>
-      <div class="footer-links">
-        <a href="/tailspace/">Home</a>
+      <div class="side-utils">
         <a href="/tailspace/zh/" lang="zh-CN">简体中文</a>
         <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <a href="/tailspace/llms.txt">llms.txt</a>
+        <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
       </div>
-    </div>
-  </footer>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+    </aside>
+
+    <main id="main" class="column">
+      <div class="breadcrumb"><span>HTTP 404</span></div>
+      <h1>Page not found</h1>
+      <p>That path doesn't exist on the Tailspace site. Go back to the homepage, open the CLI reference, or browse the guides.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="/tailspace/">English homepage</a>
+        <a class="btn" href="/tailspace/zh/" lang="zh-CN">简体中文主页</a>
+        <a class="btn" href="/tailspace/reference/">CLI reference</a>
+        <a class="btn" href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      </div>
+
+      <footer class="col-footer">
+        <span>Tailspace · MIT license</span>
+        <div class="col-footer-links">
+          <a href="/tailspace/">Home</a>
+          <a href="/tailspace/zh/" lang="zh-CN">简体中文</a>
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        </div>
+      </footer>
+    </main>
+  </div>
 
   <script src="/tailspace/app.js"></script>
 </body>

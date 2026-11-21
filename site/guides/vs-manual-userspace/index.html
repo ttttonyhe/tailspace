@@ -15,7 +15,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Tailspace">
   <meta property="og:title" content="Tailspace vs manual tailscaled &amp; systemd --user">
-  <meta property="og:description" content="Why manual nohup tailscaled and systemd --user setups break on HPC clusters, containers, and shared Linux servers, and how Tailspace fixes them.">
+  <meta property="og:description" content="Compare Tailspace against manual nohup tailscaled --tun=userspace-networking and systemd --user for restarts, reboots, updates, NFS, and security.">
   <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/">
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="zh_CN">
@@ -25,244 +25,259 @@
   <meta property="og:image:alt" content="Tailspace: Run Tailscale in Rootless Mode">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Tailspace vs manual tailscaled &amp; systemd --user">
-  <meta name="twitter:description" content="Comparison of rootless Tailscale setups: Tailspace vs nohup tailscaled vs systemd --user.">
+  <meta name="twitter:description" content="Compare Tailspace against manual nohup tailscaled --tun=userspace-networking and systemd --user for restarts, reboots, updates, NFS, and security.">
   <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
   <meta name="twitter:creator" content="@ttttonyhe">
   <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
   <link rel="stylesheet" href="../../styles.css">
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "TechArticle",
-        "headline": "Tailspace vs manual tailscaled and systemd --user",
-        "description": "Compare Tailspace against manual nohup tailscaled --tun=userspace-networking and systemd --user for restarts, reboots, updates, NFS, and security.",
-        "url": "https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/",
-        "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/",
-        "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
-        "datePublished": "2026-11-20",
-        "dateModified": "2026-11-20",
-        "author": {
-          "@type": "Person",
-          "name": "Tony L. He",
-          "url": "https://lipeng.ac"
-        },
-        "publisher": {
-          "@type": "Person",
-          "name": "Tony L. He",
-          "url": "https://lipeng.ac"
-        },
-        "about": [
-          { "@type": "Thing", "name": "Tailscale" },
-          { "@type": "Thing", "name": "Userspace networking" },
-          { "@type": "Thing", "name": "systemd" }
-        ]
-      },
-      {
-        "@type": "BreadcrumbList",
-        "itemListElement": [
-          { "@type": "ListItem", "position": 1, "name": "Tailspace", "item": "https://ttttonyhe.github.io/tailspace/" },
-          { "@type": "ListItem", "position": 2, "name": "Comparison", "item": "https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/" }
-        ]
-      },
-      {
-        "@type": "FAQPage",
-        "mainEntity": [
-          {
-            "@type": "Question",
-            "name": "Why not just run nohup tailscaled --tun=userspace-networking in the background?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "A raw nohup daemon never restarts after a crash or reboot, never switches proxies when a VPN drops, never updates itself, and collides with other hosts when your home directory is shared over NFS."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Why not use a systemd --user unit for rootless Tailscale?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Containers and CentOS 7 hosts usually lack usable user systemd buses, and on newer Linux hosts user services stop at logout without root-enabled lingering. Tailspace works anywhere bash 4.2 runs."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Can I switch from a manual userspace setup to Tailspace?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Yes. Stop your manual tailscaled process and run Tailspace's one-line installer. Tailspace installs into ~/.tailspace and puts a configured tailscale command in ~/.local/bin."
-            }
-          }
-        ]
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://ttttonyhe.github.io/tailspace/#website",
+      "name": "Tailspace",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "inLanguage": [
+        "en",
+        "zh-CN"
+      ],
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
       }
-    ]
-  }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://ttttonyhe.github.io/tailspace/#author",
+      "name": "Tony L. He",
+      "url": "https://lipeng.ac"
+    },
+    {
+      "@type": "TechArticle",
+      "inLanguage": "en",
+      "headline": "Tailspace vs manual tailscaled and systemd --user",
+      "description": "Compare Tailspace against manual nohup tailscaled --tun=userspace-networking and systemd --user for restarts, reboots, updates, NFS, and security.",
+      "url": "https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/",
+      "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/",
+      "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+      "datePublished": "2026-11-20",
+      "dateModified": "2026-11-20",
+      "author": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Tailscale"
+        },
+        {
+          "@type": "Thing",
+          "name": "Userspace networking"
+        },
+        {
+          "@type": "Thing",
+          "name": "systemd"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Tailspace",
+          "item": "https://ttttonyhe.github.io/tailspace/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Comparison",
+          "item": "https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why not just run nohup tailscaled --tun=userspace-networking in the background?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A raw nohup daemon never restarts after a crash or reboot, never switches proxies when a VPN drops, never updates itself, and collides with other hosts when your home directory is shared over NFS."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why not use a systemd --user unit for rootless Tailscale?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Containers and CentOS 7 hosts usually lack usable user systemd buses, and on newer Linux hosts user services stop at logout without root-enabled lingering. Tailspace works anywhere bash 4.2 runs."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I switch from a manual userspace setup to Tailspace?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Stop your manual tailscaled process and run Tailspace's one-line installer. Tailspace installs into ~/.tailspace and puts a configured tailscale command in ~/.local/bin."
+          }
+        }
+      ]
+    }
+  ]
+}
   </script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
 
-  <header class="site-header">
-    <div class="wrap header-inner">
+  <header class="mobile-bar">
+    <a class="brand" href="../../">
+      <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="Toggle navigation">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="Mobile">
+      <a href="../../">Home</a>
+      <a href="../../reference/">Reference</a>
+      <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
+      <a href="../../guides/kubernetes-docker/">Kubernetes</a>
+      <a href="../../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
+      <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
+      <a href="../../guides/vs-manual-userspace/" aria-current="page">Comparison</a>
+      <a href="../../guides/troubleshooting/">Troubleshooting</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="../../zh/guides/vs-manual-userspace/" lang="zh-CN">简体中文</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      <a href="../../llms.txt">llms.txt</a>
+      <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="Site navigation">
       <a class="brand" href="../../">
         <picture>
           <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
-          <img src="../../assets/logo-light.svg" alt="" width="28" height="28">
+          <img src="../../assets/logo-light.svg" alt="" width="20" height="20">
         </picture>
         <span>Tailspace</span>
       </a>
-      <nav class="nav" aria-label="Primary">
+      <nav class="side-nav" aria-label="Primary">
         <a href="../../">Home</a>
-        <a href="../hpc-slurm/">HPC &amp; Slurm</a>
-        <a href="../kubernetes-docker/">Kubernetes</a>
-        <a href="../proxy-failover/">Proxies</a>
-        <a href="./" aria-current="page">Comparison</a>
-        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="../../reference/">Reference</a>
+        <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
+        <a href="../../guides/kubernetes-docker/">Kubernetes</a>
+        <a href="../../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
+        <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
+        <a href="../../guides/vs-manual-userspace/" aria-current="page">Comparison</a>
+        <a href="../../guides/troubleshooting/">Troubleshooting</a>
+      </nav>
+      <div class="side-utils">
         <a href="../../zh/guides/vs-manual-userspace/" lang="zh-CN">简体中文</a>
         <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <button id="theme-toggle" class="theme-btn" type="button">dark</button>
-      </nav>
-    </div>
-  </header>
-
-  <main id="main" class="wrap">
-    <nav class="breadcrumb" aria-label="Breadcrumb">
-      <a href="../../">Tailspace</a>
-      <span aria-hidden="true">/</span>
-      <span>Comparison</span>
-    </nav>
-
-    <h1>Tailspace vs manual tailscaled and systemd --user</h1>
-    <p class="lead">
-      Most tutorials for running Tailscale without root tell you to untar the static binaries and run <code>nohup tailscaled --tun=userspace-networking &amp;</code>, or to drop a unit file into <code>~/.config/systemd/user/</code>. That gets you online for an afternoon. Keeping a rootless server reachable for months takes a real supervisor.
-    </p>
-
-    <h2>Feature comparison</h2>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Capability</th>
-            <th>Manual <code>nohup tailscaled</code></th>
-            <th><code>systemd --user</code> unit</th>
-            <th class="col-accent">Tailspace</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>No root, <code>sudo</code>, <code>/dev/net/tun</code>, or <code>CAP_NET_ADMIN</code></td>
-            <td>Yes</td>
-            <td>Yes</td>
-            <td class="col-accent">Yes</td>
-          </tr>
-          <tr>
-            <td>Works without <code>systemd --user</code> (containers, CentOS 7, no linger)</td>
-            <td>Yes</td>
-            <td>No</td>
-            <td class="col-accent">Yes</td>
-          </tr>
-          <tr>
-            <td>Restarts after crashes, hangs, and stuck control connections</td>
-            <td>No</td>
-            <td>Crash only</td>
-            <td class="col-accent">Yes (20 s probes, 5 s crash restart)</td>
-          </tr>
-          <tr>
-            <td>Survives server reboots without root</td>
-            <td>No</td>
-            <td>Needs root to enable linger</td>
-            <td class="col-accent">Cron + 0.9 ms shell check</td>
-          </tr>
-          <tr>
-            <td>Direct and HTTP proxy failover</td>
-            <td>No</td>
-            <td>No</td>
-            <td class="col-accent">Yes, with flap backoff</td>
-          </tr>
-          <tr>
-            <td>Daily updates with session wait and rollback</td>
-            <td>No</td>
-            <td>No</td>
-            <td class="col-accent">Yes (waits up to 3 days)</td>
-          </tr>
-          <tr>
-            <td>Safe on shared NFS <code>$HOME</code> across cluster nodes</td>
-            <td>Manual per host</td>
-            <td>Manual per host</td>
-            <td class="col-accent">Built in (<code>state/HOSTNAME/</code>)</td>
-          </tr>
-          <tr>
-            <td>Tailscale SSH on 22 + OpenSSH fallback on 2222</td>
-            <td>Manual flags</td>
-            <td>Manual flags</td>
-            <td class="col-accent">Built in</td>
-          </tr>
-          <tr>
-            <td>Shared-server safety (no open SOCKS5 proxy, 700 prefix)</td>
-            <td>Easy to misconfigure</td>
-            <td>Easy to misconfigure</td>
-            <td class="col-accent">Built in</td>
-          </tr>
-          <tr>
-            <td>High-core Go thread cap and container UDP GSO fix</td>
-            <td>No</td>
-            <td>No</td>
-            <td class="col-accent"><code>GOMAXPROCS=8</code>, GSO off</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <h2>Where manual scripts break in practice</h2>
-    <ul>
-      <li><strong><code>systemd --user</code> fails in containers and stops at logout.</strong> Docker and Kubernetes containers rarely run systemd at all, failing with <code>System has not been booted with systemd</code>. On shared Linux servers that run systemd, logout kills user services unless a root administrator runs <code>loginctl enable-linger</code>.</li>
-      <li><strong>A live process can still be dead on the network.</strong> Checking only whether a PID exists misses hung LocalAPI sockets and stale control connections. Tailspace polls <code>tailscale status --json</code> every 20 seconds and probes <code>tailscale debug ts2021</code> when offline.</li>
-      <li><strong>Updating by hand drops your active SSH session.</strong> In userspace mode, every connection lives inside <code>tailscaled</code>, so restarting it kills your shell. Tailspace detects open SSH sessions, localhost forwards, and <code>tailscale nc</code> clients, holds updates up to 3 days, and rolls back if a new Tailscale release fails its 2-minute health check and 30-second soak.</li>
-      <li><strong>Enabling <code>--socks5-server=localhost:1055</code> exposes your tailnet to neighbors.</strong> Tailscale's built-in SOCKS5 and HTTP proxies have no password. On a multi-user cluster, any other user can connect to <code>127.0.0.1:1055</code> and reach your private devices. Tailspace leaves those proxies off and uses <code>ProxyCommand tailscale nc %h %p</code> instead.</li>
-      <li><strong>Unbounded Go threads annoy shared-host admins.</strong> On a 124-core pod, unthrottled <code>tailscaled</code> starts 57 threads and scans open ports every second. Tailspace caps <code>GOMAXPROCS=8</code> and sets <code>TS_PORTLIST=false</code>.</li>
-    </ul>
-
-    <h2>Frequently asked questions</h2>
-    <div class="faq-list">
-      <details open>
-        <summary>Why not just run nohup tailscaled --tun=userspace-networking in the background?</summary>
-        <div class="faq-body">
-          <p>A raw <code>nohup</code> daemon never restarts after a crash or reboot, never switches proxies when a VPN drops, never updates itself, and collides with other hosts when your home directory is shared over NFS.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>Why not use a systemd --user unit for rootless Tailscale?</summary>
-        <div class="faq-body">
-          <p>Containers and CentOS 7 hosts usually lack usable user systemd buses, and on newer Linux hosts user services stop at logout without root-enabled lingering. Tailspace works anywhere bash 4.2 runs.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>Can I switch from a manual userspace setup to Tailspace?</summary>
-        <div class="faq-body">
-          <p>Yes. Stop your manual <code>tailscaled</code> process and run Tailspace's one-line installer. Tailspace installs into <code>~/.tailspace</code> and puts a configured <code>tailscale</code> command in <code>~/.local/bin</code>.</p>
-        </div>
-      </details>
-    </div>
-
-    <div class="actions">
-      <a class="btn btn-primary" href="../../">Install Tailspace</a>
-      <a class="btn" href="../hpc-slurm/">HPC and Slurm guide</a>
-      <a class="btn" href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.md">Full reference</a>
-    </div>
-  </main>
-
-  <footer class="site-footer">
-    <div class="wrap footer-inner">
-      <span>Tailspace · MIT license · <a href="https://github.com/ttttonyhe/tailspace">github.com/ttttonyhe/tailspace</a></span>
-      <div class="footer-links">
-        <a href="../../">Home</a>
-        <a href="../../zh/guides/vs-manual-userspace/" lang="zh-CN">简体中文</a>
         <a href="../../llms.txt">llms.txt</a>
+        <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
       </div>
-    </div>
-  </footer>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+    </aside>
+
+    <main id="main" class="column">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="../../">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <span>Comparison</span>
+      </nav>
+
+      <h1>Tailspace vs manual tailscaled and systemd --user</h1>
+      <p>Most tutorials for running Tailscale without root tell you to untar the static binaries and run <code class="nowrap">nohup tailscaled --tun=userspace-networking &amp;</code>, or to drop a unit file into <code>~/.config/systemd/user/</code>. That gets you online for an afternoon. Keeping a rootless server reachable for months takes a real supervisor.</p>
+
+      <div class="section-head">
+        <span class="section-tag">Matrix</span>
+        <h2>Feature comparison</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>Manual <code>nohup</code></th>
+              <th><code>systemd --user</code></th>
+              <th class="col-accent">Tailspace</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>No root, <code>sudo</code>, <code>/dev/net/tun</code>, or <code>CAP_NET_ADMIN</code></td><td>Yes</td><td>Yes</td><td class="col-accent">Yes</td></tr>
+            <tr><td>Works without <code>systemd --user</code></td><td>Yes</td><td>No</td><td class="col-accent">Yes</td></tr>
+            <tr><td>Restarts on crashes, hangs, and stuck connections</td><td>No</td><td>Crash only</td><td class="col-accent">Yes (20 s checks, 5 s crash restart)</td></tr>
+            <tr><td>Survives server reboots without root</td><td>No</td><td>Needs root linger</td><td class="col-accent">Cron + 0.9 ms shell check</td></tr>
+            <tr><td>Direct and HTTP proxy failover</td><td>No</td><td>No</td><td class="col-accent">Yes, with flap backoff</td></tr>
+            <tr><td>Daily updates with session wait and rollback</td><td>No</td><td>No</td><td class="col-accent">Yes (up to 3-day wait)</td></tr>
+            <tr><td>Shared NFS <code>$HOME</code> across cluster nodes</td><td>Manual per host</td><td>Manual per host</td><td class="col-accent">Built in (<code>state/HOSTNAME/</code>)</td></tr>
+            <tr><td>Tailscale SSH on 22 + OpenSSH on 2222</td><td>Manual flags</td><td>Manual flags</td><td class="col-accent">Built in</td></tr>
+            <tr><td>Shared-host safety (700 prefix, no open SOCKS5)</td><td>Easy to miss</td><td>Easy to miss</td><td class="col-accent">Built in</td></tr>
+            <tr><td>High-core Go cap and container UDP GSO fix</td><td>No</td><td>No</td><td class="col-accent"><code>GOMAXPROCS=8</code>, GSO off</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-head">
+        <span class="section-tag">Failure modes</span>
+        <h2>Where manual scripts break in practice</h2>
+      </div>
+      <ul class="spec-rows">
+        <li><span class="spec-key"><code>systemd --user</code> limits</span><span class="spec-val">Docker and Kubernetes containers fail with <code>System has not been booted with systemd</code>, and on shared Linux hosts logout kills user services unless root runs <code>loginctl enable-linger</code>.</span></li>
+        <li><span class="spec-key">Silent network hangs</span><span class="spec-val">Checking only whether a PID exists misses hung LocalAPI sockets and stale control connections. Tailspace polls <code>tailscale status --json</code> every 20 seconds and probes <code>tailscale debug ts2021</code> when offline.</span></li>
+        <li><span class="spec-key">Update disconnects</span><span class="spec-val">In userspace mode every connection lives inside <code>tailscaled</code>. Tailspace holds daily updates up to 3 days while sessions are open and rolls back failed versions after a 2-minute check and 30-second soak.</span></li>
+        <li><span class="spec-key">Unauthenticated SOCKS5</span><span class="spec-val">Adding <code>--socks5-server=localhost:1055</code> on a shared host lets every other local user reach your private tailnet. Tailspace keeps those proxies off and uses <code>ProxyCommand tailscale nc %h %p</code>.</span></li>
+        <li><span class="spec-key">Unbounded Go threads</span><span class="spec-val">On a 124-core pod, default <code>tailscaled</code> starts 57 threads and scans ports every second. Tailspace sets <code>GOMAXPROCS=8</code> and <code>TS_PORTLIST=false</code>.</span></li>
+      </ul>
+
+      <div class="section-head" id="faq">
+        <span class="section-tag">FAQ</span>
+        <h2>Frequently asked questions</h2>
+      </div>
+      <div class="faq-list">
+        <details open>
+          <summary>Why not just run nohup tailscaled --tun=userspace-networking in the background?</summary>
+          <div class="faq-body"><p>A raw <code>nohup</code> daemon never restarts after a crash or reboot, never switches proxies when a VPN drops, never updates itself, and collides with other hosts when your home directory is shared over NFS.</p></div>
+        </details>
+        <details>
+          <summary>Why not use a systemd --user unit for rootless Tailscale?</summary>
+          <div class="faq-body"><p>Containers and CentOS 7 hosts usually lack usable user systemd buses, and on newer Linux hosts user services stop at logout without root-enabled lingering. Tailspace works anywhere bash 4.2 runs.</p></div>
+        </details>
+        <details>
+          <summary>Can I switch from a manual userspace setup to Tailspace?</summary>
+          <div class="faq-body"><p>Yes. Stop your manual <code>tailscaled</code> process and run Tailspace's one-line installer. Tailspace installs into <code>~/.tailspace</code> and puts a configured <code>tailscale</code> command in <code>~/.local/bin</code>.</p></div>
+        </details>
+      </div>
+
+      <footer class="col-footer">
+        <span>Tailspace is a single bash script under the <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT license</a>, and isn't affiliated with Tailscale Inc.</span>
+        <div class="col-footer-links">
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+          <a href="../../zh/guides/vs-manual-userspace/" lang="zh-CN">简体中文</a>
+          <a href="../../llms.txt">llms.txt</a>
+          <a href="../../sitemap.xml">sitemap.xml</a>
+        </div>
+      </footer>
+    </main>
+  </div>
 
   <script src="../../app.js"></script>
 </body>

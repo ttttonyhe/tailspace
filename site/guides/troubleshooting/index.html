@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Troubleshooting &amp; common errors · Tailspace</title>
+  <meta name="description" content="Fix /dev/net/tun, systemd --user, controlplane.tailscale.com, 180-day key expiry, noexec home directories, flock, SSH refusals, and DERP latency.">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/guides/troubleshooting/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/troubleshooting/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/troubleshooting/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/troubleshooting/">
+  <link rel="icon" href="../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="Troubleshooting &amp; common errors · Tailspace">
+  <meta property="og:description" content="Fix /dev/net/tun, systemd --user, controlplane.tailscale.com, 180-day key expiry, noexec home directories, flock, SSH refusals, and DERP latency.">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/guides/troubleshooting/">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace: Run Tailscale in Rootless Mode">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Troubleshooting &amp; common errors · Tailspace">
+  <meta name="twitter:description" content="Fix /dev/net/tun, systemd --user, controlplane.tailscale.com, 180-day key expiry, noexec home directories, flock, SSH refusals, and DERP latency.">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../styles.css">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://ttttonyhe.github.io/tailspace/#website",
+      "name": "Tailspace",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "inLanguage": [
+        "en",
+        "zh-CN"
+      ],
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://ttttonyhe.github.io/tailspace/#author",
+      "name": "Tony L. He",
+      "url": "https://lipeng.ac"
+    },
+    {
+      "@type": "TechArticle",
+      "inLanguage": "en",
+      "headline": "Troubleshooting and common errors",
+      "description": "Fix /dev/net/tun, systemd --user, controlplane.tailscale.com, 180-day key expiry, noexec home directories, flock, SSH refusals, and DERP latency.",
+      "url": "https://ttttonyhe.github.io/tailspace/guides/troubleshooting/",
+      "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/guides/troubleshooting/",
+      "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+      "datePublished": "2026-11-20",
+      "dateModified": "2026-11-20",
+      "author": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Tailscale"
+        },
+        {
+          "@type": "Thing",
+          "name": "Linux troubleshooting"
+        },
+        {
+          "@type": "Thing",
+          "name": "Userspace networking"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Tailspace",
+          "item": "https://ttttonyhe.github.io/tailspace/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Troubleshooting",
+          "item": "https://ttttonyhe.github.io/tailspace/guides/troubleshooting/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I recover a remote Tailspace server whose 180-day key expired?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "In Tailscale's admin console on the Machines page, choose Temporarily extend key and disable key expiry within 30 minutes. Then reboot the server or wait for its next reboot; Tailspace clears login give-ups across reboots and reconnects via cron or the next shell login."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does install say file locks don't work or a path is too long?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Some network filesystems don't grant exclusive flock locks or place $HOME under a deep path that exceeds Unix socket limits. Install to a short local path with TAILSPACE_PREFIX=/tmp/$USER/ts or /scratch/$USER/tailspace."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why did Tailspace stop after 5 failures in a row?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Tailspace stops retrying after 5 consecutive runs where tailscaled crashes, hangs, or stays stuck offline while the network works. Inspect tailspace logs, fix the underlying issue, and run tailspace start."
+          }
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="mobile-bar">
+    <a class="brand" href="../../">
+      <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="Toggle navigation">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="Mobile">
+      <a href="../../">Home</a>
+      <a href="../../reference/">Reference</a>
+      <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
+      <a href="../../guides/kubernetes-docker/">Kubernetes</a>
+      <a href="../../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
+      <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
+      <a href="../../guides/vs-manual-userspace/">Comparison</a>
+      <a href="../../guides/troubleshooting/" aria-current="page">Troubleshooting</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="../../zh/guides/troubleshooting/" lang="zh-CN">简体中文</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      <a href="../../llms.txt">llms.txt</a>
+      <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="Site navigation">
+      <a class="brand" href="../../">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="side-nav" aria-label="Primary">
+        <a href="../../">Home</a>
+        <a href="../../reference/">Reference</a>
+        <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
+        <a href="../../guides/kubernetes-docker/">Kubernetes</a>
+        <a href="../../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
+        <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
+        <a href="../../guides/vs-manual-userspace/">Comparison</a>
+        <a href="../../guides/troubleshooting/" aria-current="page">Troubleshooting</a>
+      </nav>
+      <div class="side-utils">
+        <a href="../../zh/guides/troubleshooting/" lang="zh-CN">简体中文</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <a href="../../llms.txt">llms.txt</a>
+        <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+      </div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+    </aside>
+
+    <main id="main" class="column">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="../../">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <span>Troubleshooting</span>
+      </nav>
+
+      <h1>Troubleshooting and common errors</h1>
+      <p>Start with <code>tailspace status</code> and check <code>tailspace logs -f</code> for details. The sections below map the most common rootless Tailscale errors and stop states to exact fixes.</p>
+
+      <div class="section-head">
+        <span class="section-tag">Errors</span>
+        <h2>Common errors and fixes</h2>
+      </div>
+      <ul class="spec-rows">
+        <li><span class="spec-key"><code>failed to open /dev/net/tun</code></span><span class="spec-val">Standard Tailscale installs require root and <code>CAP_NET_ADMIN</code> to open a kernel TUN device. Install Tailspace instead; it always launches <code class="nowrap">tailscaled --tun=userspace-networking</code> and never touches <code>/dev/net/tun</code>.</span></li>
+        <li><span class="spec-key"><code>System has not been booted with systemd</code></span><span class="spec-val">Occurs when running <code>systemctl --user</code> in containers or older hosts. Tailspace doesn't use <code>systemd</code>; its supervisor runs as a plain user process and recovers via cron and your shell check.</span></li>
+        <li><span class="spec-key">Can't reach <code>controlplane.tailscale.com</code></span><span class="spec-val">The server needs an HTTP proxy. Export <code class="nowrap">https_proxy=http://HOST:PORT</code> before installing, or run <code>tailspace set --proxy http://HOST:PORT</code>. See the <a href="../proxy-failover/">proxy guide</a>.</span></li>
+        <li><span class="spec-key">Tailscale SSH refuses login</span><span class="spec-val">Verify your tailnet policy has an <code>ssh</code> rule with <code>autogroup:nonroot</code> as in <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a>, and connect as the account that installed Tailspace.</span></li>
+        <li><span class="spec-key">Nothing runs after a reboot</span><span class="spec-val">The server has no cron daemon and nobody has opened a shell since the reboot. Log in once through the cluster's normal SSH or <code>kubectl exec</code> so the shell check starts Tailspace.</span></li>
+        <li><span class="spec-key"><code>tailscaled</code> won't run / <code>noexec</code></span><span class="spec-val">Your home directory doesn't allow running binaries, blocks <code>flock</code>, or makes socket paths too long. Reinstall to a short local path with <code class="nowrap">TAILSPACE_PREFIX=/scratch/$USER/tailspace</code>.</span></li>
+        <li><span class="spec-key">Slow transfers or laggy typing</span><span class="spec-val">Run <code>tailspace status</code>. If an active device shows <code>relay</code>, traffic is using a distant DERP server. Set up a <a href="../proxy-failover/">custom DERP server or peer relay</a>.</span></li>
+      </ul>
+
+      <div class="section-head">
+        <span class="section-tag">Stop states</span>
+        <h2>When Tailspace gives up</h2>
+      </div>
+      <p>Tailspace stops instead of retrying forever when human action is needed. Here is every stop text <code>tailspace status</code> prints:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Status says</th><th>What happened</th><th>What to do</th></tr></thead>
+          <tbody>
+            <tr><td>stopped with <code>tailspace stop</code></td><td>You stopped Tailspace</td><td>Run <code>tailspace start</code></td></tr>
+            <tr><td>this server must log in again</td><td>Its key expired, or someone removed it from your tailnet</td><td>Run <code>tailspace install</code> again</td></tr>
+            <tr><td>adding this server to your tailnet failed</td><td>The auth key expired or ran out, or its tag isn't in your policy</td><td>Run <code>tailspace install</code> with a valid auth key</td></tr>
+            <tr><td>Tailscale failed 5 times in a row</td><td>Tailscale crashed, hung, or stayed offline while the network worked 5 times in a row</td><td>Check <code>tailspace logs</code>, then run <code>tailspace start</code></td></tr>
+            <tr><td>no reason was saved</td><td>The disk was full when Tailspace stopped, so it couldn't write why</td><td>Free space, then run <code>tailspace start</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Give-ups for <code>this server must log in again</code> or 5 failures hold only for the current boot. On a remote server whose 180-day key expired, choose Temporarily extend key on Tailscale's Machines page, disable key expiry within 30 minutes, and reboot the server so cron or the next login brings it back online.</p>
+
+      <div class="section-head" id="faq">
+        <span class="section-tag">FAQ</span>
+        <h2>Frequently asked questions</h2>
+      </div>
+      <div class="faq-list">
+        <details open>
+          <summary>How do I recover a remote Tailspace server whose 180-day key expired?</summary>
+          <div class="faq-body"><p>In Tailscale's admin console on the Machines page, choose Temporarily extend key and disable key expiry within 30 minutes. Then reboot the server or wait for its next reboot; Tailspace clears login give-ups across reboots and reconnects via cron or the next shell login.</p></div>
+        </details>
+        <details>
+          <summary>Why does install say file locks don't work or a path is too long?</summary>
+          <div class="faq-body"><p>Some network filesystems don't grant exclusive <code>flock</code> locks or place <code>$HOME</code> under a deep path that exceeds Unix socket limits. Install to a short local path with <code class="nowrap">TAILSPACE_PREFIX=/tmp/$USER/ts</code> or <code>/scratch/$USER/tailspace</code>.</p></div>
+        </details>
+        <details>
+          <summary>Why did Tailspace stop after 5 failures in a row?</summary>
+          <div class="faq-body"><p>Tailspace stops retrying after 5 consecutive runs where <code>tailscaled</code> crashes, hangs, or stays stuck offline while the network works. Inspect <code>tailspace logs</code>, fix the underlying issue, and run <code>tailspace start</code>.</p></div>
+        </details>
+      </div>
+
+      <footer class="col-footer">
+        <span>Tailspace is a single bash script under the <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT license</a>, and isn't affiliated with Tailscale Inc.</span>
+        <div class="col-footer-links">
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+          <a href="../../zh/guides/troubleshooting/" lang="zh-CN">简体中文</a>
+          <a href="../../llms.txt">llms.txt</a>
+          <a href="../../sitemap.xml">sitemap.xml</a>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="../../app.js"></script>
+</body>
+</html>

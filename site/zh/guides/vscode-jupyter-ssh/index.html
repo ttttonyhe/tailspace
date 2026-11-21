@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VS Code Remote-SSH、Cursor 与 Jupyter · Tailspace</title>
+  <meta name="description" content="通过无 root Tailscale 直连 VS Code Remote-SSH、Cursor、Jupyter、TensorBoard、scp 与 rsync，无需 VPN、跳板机或端口转发。">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/zh/guides/vscode-jupyter-ssh/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/vscode-jupyter-ssh/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/">
+  <link rel="icon" href="../../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="VS Code Remote-SSH、Cursor 与 Jupyter · Tailspace">
+  <meta property="og:description" content="通过无 root Tailscale 直连 VS Code Remote-SSH、Cursor、Jupyter、TensorBoard、scp 与 rsync，无需 VPN、跳板机或端口转发。">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/zh/guides/vscode-jupyter-ssh/">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace：非 Root 身份运行 Tailscale">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="VS Code Remote-SSH、Cursor 与 Jupyter · Tailspace">
+  <meta name="twitter:description" content="通过无 root Tailscale 直连 VS Code Remote-SSH、Cursor、Jupyter、TensorBoard、scp 与 rsync，无需 VPN、跳板机或端口转发。">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../../styles.css">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://ttttonyhe.github.io/tailspace/#website",
+      "name": "Tailspace",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "inLanguage": [
+        "en",
+        "zh-CN"
+      ],
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://ttttonyhe.github.io/tailspace/#author",
+      "name": "Tony L. He",
+      "url": "https://lipeng.ac"
+    },
+    {
+      "@type": "TechArticle",
+      "inLanguage": "zh-CN",
+      "headline": "免 root 使用 VS Code Remote-SSH、Cursor 与 Jupyter",
+      "description": "通过无 root Tailscale 直连 VS Code Remote-SSH、Cursor、Jupyter、TensorBoard、scp 与 rsync，无需 VPN、跳板机或端口转发。",
+      "url": "https://ttttonyhe.github.io/tailspace/zh/guides/vscode-jupyter-ssh/",
+      "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/zh/guides/vscode-jupyter-ssh/",
+      "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+      "datePublished": "2026-11-20",
+      "dateModified": "2026-11-20",
+      "author": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Visual Studio Code"
+        },
+        {
+          "@type": "Thing",
+          "name": "Tailscale SSH"
+        },
+        {
+          "@type": "Thing",
+          "name": "Jupyter Notebook"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Tailspace",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "VS Code 与 Jupyter",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/guides/vscode-jupyter-ssh/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "为什么 Tailscale SSH 每 12 小时要我在浏览器重新登录一次？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Tailscale 的默认 SSH 策略采用 check 模式，每 12 小时要求复验一次。把策略 ssh 规则里的 \"check\" 改成 \"accept\" 即可，就像 examples/policy.hujson 对 tag:server 做的那样。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "在无 root 的 Tailspace 服务器上能用 curl 或 ping 访问其他 tailnet 设备吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "没有内核 TUN 网卡，普通 ping 和不支持 tailscale nc 的程序访问不到 tailnet 地址；但 tailscale ping HOST 可用，ssh、scp、rsync 和 git 可以通过 ProxyCommand tailscale nc %h %p 正常连接。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "每日更新 Tailscale 会断开我正在用的 VS Code Remote-SSH 会话吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不会。Tailspace 会检查活动 SSH 会话、转发到 127.0.0.1 或 ::1 的连接以及 LocalAPI 客户端，有会话时最多把更新推迟 3 天。"
+          }
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+
+  <header class="mobile-bar">
+    <a class="brand" href="../../../zh/">
+      <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/logo-dark.svg">
+          <img src="../../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="切换导航">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="移动导航">
+      <a href="../../../zh/">首页</a>
+      <a href="../../../zh/reference/">完整参考</a>
+      <a href="../../../zh/guides/hpc-slurm/">超算与 Slurm</a>
+      <a href="../../../zh/guides/kubernetes-docker/">Kubernetes</a>
+      <a href="../../../zh/guides/vscode-jupyter-ssh/" aria-current="page">VS Code 与 Jupyter</a>
+      <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
+      <a href="../../../zh/guides/vs-manual-userspace/">方案对比</a>
+      <a href="../../../zh/guides/troubleshooting/">故障排查</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="../../../guides/vscode-jupyter-ssh/" lang="en">English</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      <a href="../../../llms.txt">llms.txt</a>
+      <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="站点导航">
+      <a class="brand" href="../../../zh/">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/logo-dark.svg">
+          <img src="../../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="side-nav" aria-label="主导航">
+        <a href="../../../zh/">首页</a>
+        <a href="../../../zh/reference/">完整参考</a>
+        <a href="../../../zh/guides/hpc-slurm/">超算与 Slurm</a>
+        <a href="../../../zh/guides/kubernetes-docker/">Kubernetes</a>
+        <a href="../../../zh/guides/vscode-jupyter-ssh/" aria-current="page">VS Code 与 Jupyter</a>
+        <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
+        <a href="../../../zh/guides/vs-manual-userspace/">方案对比</a>
+        <a href="../../../zh/guides/troubleshooting/">故障排查</a>
+      </nav>
+      <div class="side-utils">
+        <a href="../../../guides/vscode-jupyter-ssh/" lang="en">English</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <a href="../../../llms.txt">llms.txt</a>
+        <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
+      </div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+    </aside>
+
+    <main id="main" class="column">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="../../../zh/">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <span>VS Code 与 Jupyter</span>
+      </nav>
+
+      <h1>免 root 使用 VS Code Remote-SSH、Cursor 与 Jupyter</h1>
+      <p>用 Tailspace 把共享 Linux 服务器、超算节点或 Kubernetes Pod 加入 tailnet 后，笔记本无需校园 VPN、跳板机、VS Code Tunnel 或 <code>kubectl port-forward</code> 就能直连 SSH、编辑器和本地 Web 服务。</p>
+
+      <div class="section-head">
+        <span class="section-tag">SSH 端口</span>
+        <h2>22 端口 Tailscale SSH 与 2222 端口 OpenSSH</h2>
+      </div>
+      <p>Tailspace 在 22 端口开启 Tailscale SSH。如果服务器同时运行了 OpenSSH 且你没有程序占用 <code>127.0.0.1:2222</code>，Tailspace 会把 OpenSSH 转发到 2222 端口：</p>
+      <ul class="spec-rows">
+        <li><span class="spec-key">22 端口（Tailscale SSH）</span><span class="spec-val">用 Tailscale 身份认证，不需要 SSH 密钥，且 Tailscale 知道具体是哪台设备连了进来。把策略 <code>ssh</code> 规则里的 <code>"check"</code> 改成 <code>"accept"</code> 可跳过每 12 小时的浏览器复验。</span></li>
+        <li><span class="spec-key">2222 端口（OpenSSH）</span><span class="spec-val">继续沿用现有 SSH 密钥、agent forwarding 和 <code>~/.ssh/config</code>。不过 OpenSSH 看到的连接都来自 <code>127.0.0.1</code>，<code>authorized_keys</code> 里的 <code>from=</code> 限制无法区分设备。</span></li>
+      </ul>
+
+      <div class="section-head">
+        <span class="section-tag">编辑器</span>
+        <h2>VS Code Remote-SSH 与 Cursor 配置</h2>
+      </div>
+      <p>在笔记本的 <code>~/.ssh/config</code> 里添加服务器，走 Tailscale SSH 填 22 端口，走 OpenSSH 填 2222 端口：</p>
+      <pre><code>Host lab-07
+  HostName lab-07
+  User you
+  Port 22</code></pre>
+      <p>在 VS Code 或 Cursor 的 Remote-SSH 里连接 <code>lab-07</code> 即可。想关闭 Tailscale SSH 并把 22 端口交回 OpenSSH，在服务器上运行 <code>tailspace set --no-ssh</code>。</p>
+
+      <div class="section-head">
+        <span class="section-tag">本地服务</span>
+        <h2>Jupyter、TensorBoard 与任意本地端口</h2>
+      </div>
+      <p>在 userspace 模式下，除 22、2222 以及 <code>tailscale serve</code> 占用的端口外，其余端口全部直通服务器 <code>127.0.0.1</code>。启动 8888 端口的 Jupyter 或 6006 端口的 TensorBoard，本机浏览器直接打开，不需要 <code>ssh -L</code> 转发：</p>
+      <pre><code>jupyter lab --no-browser --port=8888
+# 在 tailnet 内任意设备打开 http://lab-07:8888</code></pre>
+      <p>重启 Tailscale 会断开经 Tailscale 的连接，所以 Tailspace 在检测到活动 SSH 会话或 <code>127.0.0.1</code>、<code>::1</code> 上的转发连接时，会把每日更新和切回直连最多推迟 3 天。长时间训练任务仍建议放在 <code>tmux</code> 或 <code>screen</code> 里。</p>
+
+      <div class="section-head">
+        <span class="section-tag">服务器出站</span>
+        <h2>用 tailscale nc 从服务器连接其他设备</h2>
+      </div>
+      <p>没有 root 就没有内核 <code>tailscale0</code> 网卡，服务器上的程序要通过 <code>tailscale nc</code> 访问你的其他设备。在服务器的 <code>~/.ssh/config</code> 里添加一次：</p>
+      <pre><code>Host lab-01
+  User you
+  Port 2222
+  ProxyCommand tailscale nc %h %p</code></pre>
+      <p>之后 <code>ssh lab-01</code>、<code>scp</code>、<code>rsync</code> 和 <code>git</code> 都能按名字连到其他 Tailspace 服务器。带 <code>tag:server</code> 标签的服务器互访需取消 <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a> 中允许 <code>tag:server</code> 访问 <code>tag:server</code> 一行的注释。Tailspace 不开启无密码的 SOCKS5 和 HTTP 代理，以免同机其他用户接入你的 tailnet。</p>
+
+      <div class="section-head" id="faq">
+        <span class="section-tag">常见问题</span>
+        <h2>常见问题</h2>
+      </div>
+      <div class="faq-list">
+        <details open>
+          <summary>为什么 Tailscale SSH 每 12 小时要我在浏览器重新登录一次？</summary>
+          <div class="faq-body"><p>Tailscale 的默认 SSH 策略采用 check 模式，每 12 小时要求复验一次。把策略 <code>ssh</code> 规则里的 <code>"check"</code> 改成 <code>"accept"</code> 即可，就像 <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a> 对 <code>tag:server</code> 做的那样。</p></div>
+        </details>
+        <details>
+          <summary>在无 root 的 Tailspace 服务器上能用 curl 或 ping 访问其他 tailnet 设备吗？</summary>
+          <div class="faq-body"><p>没有内核 TUN 网卡，普通 <code>ping</code> 和不支持 <code>tailscale nc</code> 的程序访问不到 tailnet 地址；但 <code>tailscale ping HOST</code> 可用，<code>ssh</code>、<code>scp</code>、<code>rsync</code> 和 <code>git</code> 可以通过 <code>ProxyCommand tailscale nc %h %p</code> 正常连接。</p></div>
+        </details>
+        <details>
+          <summary>每日更新 Tailscale 会断开我正在用的 VS Code Remote-SSH 会话吗？</summary>
+          <div class="faq-body"><p>不会。Tailspace 会检查活动 SSH 会话、转发到 <code>127.0.0.1</code> 或 <code>::1</code> 的连接以及 LocalAPI 客户端，有会话时最多把更新推迟 3 天。</p></div>
+        </details>
+      </div>
+
+      <footer class="col-footer">
+        <span>Tailspace 以 <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT 许可证</a>发布，与 Tailscale Inc. 没有关联。</span>
+        <div class="col-footer-links">
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+          <a href="../../../guides/vscode-jupyter-ssh/" lang="en">English</a>
+          <a href="../../../llms.txt">llms.txt</a>
+          <a href="../../../sitemap.xml">sitemap.xml</a>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="../../../app.js"></script>
+</body>
+</html>

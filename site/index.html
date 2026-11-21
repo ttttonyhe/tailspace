@@ -15,7 +15,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Tailspace">
   <meta property="og:title" content="Tailspace · Run Tailscale without root, sudo, /dev/net/tun">
-  <meta property="og:description" content="One bash script to install and supervise rootless Tailscale and Tailscale SSH in userspace mode on HPC clusters, Slurm nodes, Kubernetes pods, and shared servers.">
+  <meta property="og:description" content="Install and supervise rootless Tailscale on Linux without sudo, /dev/net/tun, or systemd. Built for HPC, Slurm, Kubernetes pods, and shared servers.">
   <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/">
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="zh_CN">
@@ -25,330 +25,395 @@
   <meta property="og:image:alt" content="Tailspace: Run Tailscale in Rootless Mode">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Tailspace · Run Tailscale without root, sudo, /dev/net/tun">
-  <meta name="twitter:description" content="One bash script to install and supervise rootless Tailscale and Tailscale SSH on HPC, Slurm, Kubernetes pods, and shared Linux servers.">
+  <meta name="twitter:description" content="Install and supervise rootless Tailscale on Linux without sudo, /dev/net/tun, or systemd. Built for HPC, Slurm, Kubernetes pods, and shared servers.">
   <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
   <meta name="twitter:creator" content="@ttttonyhe">
   <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
   <link rel="stylesheet" href="styles.css">
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "SoftwareApplication",
-        "@id": "https://ttttonyhe.github.io/tailspace/#software",
-        "name": "Tailspace",
-        "alternateName": "Rootless Tailscale supervisor",
-        "url": "https://ttttonyhe.github.io/tailspace/",
-        "downloadUrl": "https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace",
-        "softwareVersion": "__TAILSPACE_VERSION__",
-        "operatingSystem": "Linux 3.2+ (x86_64, arm64, arm, 386, riscv64)",
-        "applicationCategory": "DeveloperApplication",
-        "applicationSubCategory": "NetworkingApplication",
-        "license": "https://opensource.org/licenses/MIT",
-        "isAccessibleForFree": true,
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "USD"
-        },
-        "description": "Single-file bash tool that installs and supervises Tailscale in userspace networking mode (--tun=userspace-networking) without root, sudo, /dev/net/tun, CAP_NET_ADMIN, or systemd.",
-        "author": {
-          "@type": "Person",
-          "name": "Tony L. He",
-          "url": "https://lipeng.ac"
-        },
-        "codeRepository": "https://github.com/ttttonyhe/tailspace"
-      },
-      {
-        "@type": "FAQPage",
-        "mainEntity": [
-          {
-            "@type": "Question",
-            "name": "Can I install and run Tailscale without root or sudo?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Yes. Tailspace downloads Tailscale's official static binaries into ~/.tailspace/bin and runs tailscaled --tun=userspace-networking. It never opens /dev/net/tun and doesn't ask for sudo, CAP_NET_ADMIN, or systemd."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Does Tailspace survive crashes and server reboots without systemd?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Yes. A user-level supervisor restarts tailscaled 5 seconds after a crash and checks it every 20 seconds so hangs restart after 3 missed checks. After a reboot, a user cron job starts Tailspace right away where cron runs, and a 0.9 ms shell check brings it back on your next login everywhere else."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Can I use VS Code Remote-SSH, Cursor, and Jupyter over rootless Tailscale?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Yes. Tailspace turns on Tailscale SSH on port 22 and forwards OpenSSH on port 2222 when the server runs OpenSSH, so VS Code Remote-SSH, Cursor, scp, and rsync connect to your server's tailnet name. Local web servers such as Jupyter on port 8888 or TensorBoard on port 6006 work at http://hostname:8888."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "What happens if my server is behind an HTTP proxy or firewall?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Export https_proxy=http://HOST:PORT before installing. Tailspace saves that proxy, switches between the direct path and the proxy path when either fails, and switches back once direct access stays healthy. See the HTTP proxy failover guide."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Is Tailspace safe on a shared university or lab server?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Tailscale runs only as your user account, ~/.tailspace uses mode 700, and Tailscale's unauthenticated SOCKS5 and HTTP proxies stay off so other users on the host can't reach your tailnet. Pass keys with TS_AUTHKEY=file:/path/to/key so secrets never appear in /proc/*/cmdline."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "How much CPU and memory does Tailspace use?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "On a Kubernetes pod with 124 usable cores and 1,435 visible processes running Tailscale 1.104.7, Tailspace adds 0.9 ms to each new shell and uses 0.14% of one CPU core and 30 MB of memory at idle. Userspace networking moved about 10 Gbit/s in a local loopback test."
-            }
-          }
-        ]
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://ttttonyhe.github.io/tailspace/#website",
+      "name": "Tailspace",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "inLanguage": [
+        "en",
+        "zh-CN"
+      ],
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
       }
-    ]
-  }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://ttttonyhe.github.io/tailspace/#author",
+      "name": "Tony L. He",
+      "url": "https://lipeng.ac"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://ttttonyhe.github.io/tailspace/#software",
+      "name": "Tailspace",
+      "alternateName": "Rootless Tailscale supervisor",
+      "inLanguage": "en",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "downloadUrl": "https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace",
+      "softwareVersion": "__TAILSPACE_VERSION__",
+      "operatingSystem": "Linux 3.2+ (x86_64, arm64, arm, 386, riscv64)",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "NetworkingApplication",
+      "license": "https://opensource.org/licenses/MIT",
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "description": "Install and supervise rootless Tailscale on Linux without sudo, /dev/net/tun, or systemd. Built for HPC, Slurm, Kubernetes pods, and shared servers.",
+      "author": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "codeRepository": "https://github.com/ttttonyhe/tailspace"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Can I install and run Tailscale without root or sudo?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Tailspace downloads Tailscale's official static binaries into ~/.tailspace/bin and runs tailscaled --tun=userspace-networking. It never opens /dev/net/tun and doesn't ask for sudo, CAP_NET_ADMIN, or systemd."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Tailspace survive crashes and server reboots without systemd?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. A user-level supervisor restarts tailscaled 5 seconds after a crash and checks it every 20 seconds so hangs restart after 3 missed checks. After a reboot, a user cron job starts Tailspace right away where cron runs, and a 0.9 ms shell check brings it back on your next login everywhere else."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I use VS Code Remote-SSH, Cursor, and Jupyter over rootless Tailscale?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Tailspace turns on Tailscale SSH on port 22 and forwards OpenSSH on port 2222 when the server runs OpenSSH, so VS Code Remote-SSH, Cursor, scp, and rsync connect to your server's tailnet name. Local web servers such as Jupyter on port 8888 or TensorBoard on port 6006 work at http://hostname:8888."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What happens if my server is behind an HTTP proxy or firewall?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Export https_proxy=http://HOST:PORT before installing. Tailspace saves that proxy, switches between the direct path and the proxy path when either fails, and switches back once direct access stays healthy. See the HTTP proxy failover guide."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Tailspace safe on a shared university or lab server?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Tailscale runs only as your user account, ~/.tailspace uses mode 700, and Tailscale's unauthenticated SOCKS5 and HTTP proxies stay off so other users on the host can't reach your tailnet. Pass keys with TS_AUTHKEY=file:/path/to/key so secrets never appear in /proc/*/cmdline."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much CPU and memory does Tailspace use?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "On a Kubernetes pod with 124 usable cores and 1,435 visible processes running Tailscale 1.104.7, Tailspace adds 0.9 ms to each new shell and uses 0.14% of one CPU core and 30 MB of memory at idle. Userspace networking moved about 10 Gbit/s in a local loopback test."
+          }
+        }
+      ]
+    }
+  ]
+}
   </script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
 
-  <header class="site-header">
-    <div class="wrap header-inner">
+  <header class="mobile-bar">
+    <a class="brand" href="./">
+      <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+          <img src="assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="Toggle navigation">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="Mobile">
+      <a href="./" aria-current="page">Home</a>
+      <a href="reference/">Reference</a>
+      <a href="guides/hpc-slurm/">HPC &amp; Slurm</a>
+      <a href="guides/kubernetes-docker/">Kubernetes</a>
+      <a href="guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
+      <a href="guides/proxy-failover/">Proxies &amp; DERP</a>
+      <a href="guides/vs-manual-userspace/">Comparison</a>
+      <a href="guides/troubleshooting/">Troubleshooting</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="zh/" lang="zh-CN">简体中文</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      <a href="llms.txt">llms.txt</a>
+      <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="Site navigation">
       <a class="brand" href="./">
         <picture>
           <source data-theme-source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
-          <img src="assets/logo-light.svg" alt="" width="28" height="28">
+          <img src="assets/logo-light.svg" alt="" width="20" height="20">
         </picture>
         <span>Tailspace</span>
       </a>
-      <nav class="nav" aria-label="Primary">
-        <a href="#install">Install</a>
-        <a href="#guides">Guides</a>
-        <a href="#faq">FAQ</a>
-        <a href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.md">Reference</a>
-        <span class="nav-sep" aria-hidden="true"></span>
+      <nav class="side-nav" aria-label="Primary">
+        <a href="./" aria-current="page">Home</a>
+        <a href="reference/">Reference</a>
+        <a href="guides/hpc-slurm/">HPC &amp; Slurm</a>
+        <a href="guides/kubernetes-docker/">Kubernetes</a>
+        <a href="guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
+        <a href="guides/proxy-failover/">Proxies &amp; DERP</a>
+        <a href="guides/vs-manual-userspace/">Comparison</a>
+        <a href="guides/troubleshooting/">Troubleshooting</a>
+      </nav>
+      <div class="side-utils">
         <a href="zh/" lang="zh-CN">简体中文</a>
         <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <button id="theme-toggle" class="theme-btn" type="button">dark</button>
-      </nav>
-    </div>
-  </header>
+        <a href="llms.txt">llms.txt</a>
+        <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+      </div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+    </aside>
 
-  <main id="main" class="wrap">
-    <div class="kicker">
-      <span class="pulse-dot" aria-hidden="true"></span>
-      <span>v__TAILSPACE_VERSION__ · single bash script · MIT license</span>
-    </div>
+    <main id="main" class="column">
+      <h1>Run Tailscale in Rootless Mode</h1>
+      <p>Installing <a href="https://tailscale.com">Tailscale</a> on a remote Linux server normally requires root (admin) access via <code>sudo</code>, <code>/dev/net/tun</code>, and <code>systemd</code>. On a shared server such as an HPC login node, a Slurm cluster, a Kubernetes pod, or an unprivileged Docker container, you usually have none of those.</p>
+      <p>Tailspace installs and supervises <code>tailscaled</code> in <a href="https://tailscale.com/docs/concepts/userspace-networking">userspace networking mode</a> with <code class="nowrap">--tun=userspace-networking</code> inside your home directory without root, so you can reach the server with SSH, VS Code Remote-SSH, or Jupyter from any device on your tailnet.</p>
 
-    <h1>Tailspace</h1>
-    <p class="slogan">Run Tailscale in Rootless Mode</p>
-    <p class="lead">
-      Installing <a href="https://tailscale.com">Tailscale</a> on a remote Linux server normally requires root (admin) access via <code>sudo</code>, <code>/dev/net/tun</code>, and <code>systemd</code>. On a shared server such as an HPC login node, a Slurm cluster, a Kubernetes pod, or an unprivileged Docker container, you usually have none of those. Tailspace runs <code>tailscaled</code> in <a href="https://tailscale.com/docs/concepts/userspace-networking">userspace networking mode</a> with <code>--tun=userspace-networking</code> inside your home directory without root, so you can reach the server with SSH, VS Code Remote-SSH, or Jupyter from any device on your tailnet.
-    </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#install">Install Tailspace</a>
+        <a class="btn" href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <a class="btn" href="reference/">CLI reference</a>
+      </div>
 
-    <section id="install" aria-label="Install Tailspace">
-      <div class="install-box" data-install-box>
-        <div class="install-tabs" role="tablist" aria-label="Install modes">
-          <button id="tab-default" class="install-tab" role="tab" type="button" aria-selected="true" aria-controls="install-panel" tabindex="0"
-            data-cmd="curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash"
-            data-note="Prints a Tailscale login link and an SSH command once the server joins your tailnet.">
-            Default login
-          </button>
-          <button id="tab-authkey" class="install-tab" role="tab" type="button" aria-selected="false" aria-controls="install-panel" tabindex="-1"
-            data-cmd="curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | TS_AUTHKEY=file:/path/to/key bash -s -- install --hostname lab-07"
-            data-note="Headless setup for scripts, Slurm jobs, or Kubernetes pods. Keeps the auth key out of /proc and shell history.">
-            Auth key
-          </button>
-          <button id="tab-proxy" class="install-tab" role="tab" type="button" aria-selected="false" aria-controls="install-panel" tabindex="-1"
-            data-cmd="export https_proxy=http://127.0.0.1:7890 &amp;&amp; curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash"
-            data-note="Saves the HTTP proxy for failover between the direct path and the proxy path.">
-            HTTP proxy
-          </button>
-          <button id="tab-prefix" class="install-tab" role="tab" type="button" aria-selected="false" aria-controls="install-panel" tabindex="-1"
-            data-cmd="curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | TAILSPACE_PREFIX=/scratch/$USER/tailspace bash"
-            data-note="Use a custom prefix when your home directory is mounted noexec or blocks file locks.">
-            Custom prefix
-          </button>
+      <figure class="figure">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg">
+          <img src="assets/hero-light.svg" alt="A shared cluster with no root access, drawn as nine servers in a rack. Server 05 is yours: Tailspace runs Tailscale there, inside your home directory, and connects it to your laptop, where an SSH session is open." width="880" height="316">
+        </picture>
+      </figure>
+
+      <div class="metrics-band" aria-label="Measured resource usage on a 124-core Kubernetes pod running Tailscale 1.104.7">
+        <div class="metric-item">
+          <div class="metric-label">added to each shell</div>
+          <div class="metric-value">0.9<span class="metric-unit">ms</span></div>
         </div>
-        <div id="install-panel" role="tabpanel" aria-labelledby="tab-default">
-          <div class="install-cmd-row">
-            <pre class="install-cmd"><span class="prompt" aria-hidden="true">$</span><code data-cmd-text>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</code></pre>
-            <button class="copy-btn" type="button" data-copy-btn data-label="copy" data-copied="copied">copy</button>
-          </div>
-          <div class="install-note" data-cmd-note>
-            Prints a Tailscale login link and an SSH command once the server joins your tailnet.
-          </div>
-          <span class="sr-only" aria-live="polite" data-copy-live></span>
+        <div class="metric-item">
+          <div class="metric-label">idle CPU, one core</div>
+          <div class="metric-value">0.14<span class="metric-unit">%</span></div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-label">idle memory</div>
+          <div class="metric-value">30<span class="metric-unit">MB</span></div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-label">userspace loopback</div>
+          <div class="metric-value">~10<span class="metric-unit">Gbit/s</span></div>
         </div>
       </div>
 
-      <div class="callout">
-        <p><strong>Check shared cluster rules first.</strong> Tailspace keeps Tailscale running in the background, and Tailscale SSH skips the cluster's own two-factor check. Some clusters forbid one or both. Tailscale also expires device keys after 180 days by default, so <a href="https://tailscale.com/kb/1028/key-expiry">disable key expiry</a> in the admin console to keep the server connected for good.</p>
+      <div class="section-head" id="install">
+        <span class="section-tag">Install</span>
+        <h2>One bash script, no sudo required</h2>
       </div>
-    </section>
+      <p>Run the installer on the remote server. It downloads Tailscale's official static binaries into <code>~/.tailspace</code>, starts the supervisor, and prints a login URL plus an SSH command once the server joins your tailnet.</p>
 
-    <figure class="figure">
-      <picture>
-        <source data-theme-source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg">
-        <img src="assets/hero-light.svg"
-             alt="A shared cluster with no root access, drawn as nine servers in a rack. Server 05 is yours: Tailspace runs Tailscale there, inside your home directory, and connects it to your laptop, where an SSH session is open."
-             width="880" height="316">
-      </picture>
-    </figure>
-
-    <h2>What Tailspace does</h2>
-    <p>Without root or <code>systemd</code>, Tailscale can't run as a system service, so Tailspace sets it up in userspace mode and looks after it with a small supervisor:</p>
-    <ul>
-      <li><strong>SSH and local web ports.</strong> Turns on Tailscale SSH on port 22, forwards OpenSSH on port 2222 when the server runs OpenSSH, and lets you reach local ports such as Jupyter on 8888 or TensorBoard on 6006 over your tailnet.</li>
-      <li><strong>Crash, hang, and stuck-daemon recovery.</strong> Restarts <code>tailscaled</code> 5 seconds after a crash, probes state every 20 seconds so hangs restart after 3 missed checks, and restarts stuck connections once path probes confirm the network works.</li>
-      <li><strong>Reboot recovery without systemd.</strong> Installs a user cron job on servers with cron and a sub-millisecond shell check in your startup files everywhere else.</li>
-      <li><strong>Direct and HTTP proxy failover.</strong> Switches between a direct connection and your saved <code>http://</code> proxy whenever either stops reaching Tailscale's coordination server.</li>
-      <li><strong>Session-safe daily updates with rollback.</strong> Checks for new Tailscale releases daily, waits up to 3 days while sessions are open, and rolls back if a new version fails health checks.</li>
-      <li><strong>Multi-user isolation on shared hosts.</strong> Locks down <code>~/.tailspace</code> to mode 700, stores state per hostname under <code>state/HOSTNAME/</code> for shared NFS home directories, and keeps unauthenticated SOCKS5 and HTTP proxies off.</li>
-      <li><strong>Knows when to stop.</strong> Stops and explains why in <code>tailspace status</code> after an expired key, a bad auth key, or 5 failed runs in a row.</li>
-    </ul>
-
-    <h2>Measured overhead</h2>
-    <p>Measured on a Kubernetes pod with 124 usable cores and 1,435 visible processes running Tailscale 1.104.7:</p>
-
-    <div class="metrics-grid">
-      <div class="metric-card">
-        <div class="metric-label">added to each new shell</div>
-        <div class="metric-value">0.9<span class="metric-unit">ms</span></div>
+      <div data-install-box>
+        <div class="terminal">
+          <div class="terminal-bar">
+            <div class="term-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="term-tabs" role="tablist" aria-label="Install modes">
+              <button id="tab-default" class="term-tab" role="tab" type="button" aria-selected="true" aria-controls="install-panel" tabindex="0"
+                data-cmd="curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash"
+                data-note="Prints a login link and an SSH command once the server joins your tailnet">Default</button>
+              <button id="tab-authkey" class="term-tab" role="tab" type="button" aria-selected="false" aria-controls="install-panel" tabindex="-1"
+                data-cmd="curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | TS_AUTHKEY=file:/path/to/key bash -s -- install --hostname lab-07"
+                data-note="Headless install for scripts, Slurm jobs, or Kubernetes pods; keeps secrets out of /proc">Auth key</button>
+              <button id="tab-proxy" class="term-tab" role="tab" type="button" aria-selected="false" aria-controls="install-panel" tabindex="-1"
+                data-cmd="export https_proxy=http://127.0.0.1:7890 &amp;&amp; curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash"
+                data-note="Saves the HTTP proxy for failover between the direct path and the proxy path">HTTP proxy</button>
+              <button id="tab-prefix" class="term-tab" role="tab" type="button" aria-selected="false" aria-controls="install-panel" tabindex="-1"
+                data-cmd="curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | TAILSPACE_PREFIX=/scratch/$USER/tailspace bash"
+                data-note="Install to local scratch storage when your home directory is mounted noexec">Custom prefix</button>
+            </div>
+          </div>
+          <div id="install-panel" class="term-body" role="tabpanel" aria-labelledby="tab-default">
+            <span class="term-comment" data-cmd-comment># Prints a login link and an SSH command once the server joins your tailnet</span>
+            <div class="term-line"><span class="term-prompt" aria-hidden="true">$</span><span data-cmd-text>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</span><span class="term-cursor" aria-hidden="true"></span></div>
+            <span class="sr-only" aria-live="polite" data-copy-live></span>
+          </div>
+        </div>
+        <div class="term-actions">
+          <button class="term-action" type="button" data-copy-btn data-label="Copy install command" data-copied="Copied install command">
+            <span>Copy install command</span>
+          </button>
+          <a class="term-action" href="reference/">
+            <span>Read CLI reference</span>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h6.5V10"/><path d="M12.5 3.5 5 11"/></svg>
+          </a>
+        </div>
       </div>
-      <div class="metric-card">
-        <div class="metric-label">idle CPU, one core</div>
-        <div class="metric-value">0.14<span class="metric-unit">%</span></div>
+
+      <div class="note">
+        <p><strong>Check shared cluster rules first.</strong> Tailspace keeps Tailscale running in the background, and Tailscale SSH skips the cluster's own two-factor check. Some clusters forbid one or both. Tailscale also expires device keys after 180 days by default, so <a href="https://tailscale.com/kb/1028/key-expiry">disable key expiry</a> in the admin console to keep the server online for good.</p>
       </div>
-      <div class="metric-card">
-        <div class="metric-label">idle memory</div>
-        <div class="metric-value">30<span class="metric-unit">MB</span></div>
+
+      <div class="section-head">
+        <span class="section-tag">Supervision</span>
+        <h2>Built to stay connected without systemd</h2>
       </div>
-      <div class="metric-card">
-        <div class="metric-label">userspace loopback</div>
-        <div class="metric-value">~10<span class="metric-unit">Gbit/s</span></div>
+      <p>Without root or <code>systemd</code>, Tailscale can't run as a system service. Tailspace runs a small user-level supervisor next to <code>tailscaled</code> to handle crashes, reboots, updates, and proxy drops:</p>
+      <ul class="spec-rows">
+        <li>
+          <span class="spec-key">SSH and local ports</span>
+          <span class="spec-val">Turns on Tailscale SSH on port 22, forwards OpenSSH on port 2222 when the server runs OpenSSH, and lets you reach local ports such as Jupyter on 8888 or TensorBoard on 6006 over your tailnet. See the <a href="guides/vscode-jupyter-ssh/">VS Code and Jupyter guide</a>.</span>
+        </li>
+        <li>
+          <span class="spec-key">Crash and hang recovery</span>
+          <span class="spec-val">Restarts <code>tailscaled</code> 5 seconds after a crash, checks state every 20 seconds so hangs restart after 3 missed checks, and restarts stuck connections once path probes confirm the network works.</span>
+        </li>
+        <li>
+          <span class="spec-key">Reboot recovery</span>
+          <span class="spec-val">Adds a user cron job where a cron daemon runs, and a 0.9 ms shell check in your startup files everywhere else so the server rejoins on your next login.</span>
+        </li>
+        <li>
+          <span class="spec-key">Session-safe updates</span>
+          <span class="spec-val">Checks for new Tailscale releases daily, waits up to 3 days while SSH or port-forwarded sessions are open, and rolls back if a release fails its 2-minute health check and 30-second soak.</span>
+        </li>
+        <li>
+          <span class="spec-key">Shared-host isolation</span>
+          <span class="spec-val">Creates <code>~/.tailspace</code> with mode 700, separates per-host state under <code>state/HOSTNAME/</code> for shared NFS home directories, and keeps Tailscale's unauthenticated SOCKS5 and HTTP proxies off.</span>
+        </li>
+        <li>
+          <span class="spec-key">Clean stop states</span>
+          <span class="spec-val">Stops and writes the exact reason to <code>tailspace status</code> after an expired key, a bad auth key, or 5 failed runs in a row, instead of retrying forever.</span>
+        </li>
+      </ul>
+
+      <div class="section-head">
+        <span class="section-tag">Failover</span>
+        <h2>Automatic direct and HTTP proxy switching</h2>
       </div>
-    </div>
+      <p>Tailscale reads its proxy setting only at startup. When your server has an HTTP proxy, Tailspace monitors both the direct path and the proxy path using <code>tailscale debug ts2021</code> probes and restarts <code>tailscaled</code> on whichever path works. Moving back to direct waits until active sessions close, up to 3 days. Read the <a href="guides/proxy-failover/">HTTP proxy and DERP guide</a>.</p>
 
-    <p>When more than 8 cores are available, Tailspace caps <code>GOMAXPROCS=8</code>, which cut Tailscale from 57 threads to 14 and probe CPU time from 57 ms to 15 ms on that 124-core pod.</p>
+      <figure class="figure">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="assets/paths-dark.svg">
+          <img src="assets/paths-light.svg" alt="A timeline with two lanes, the direct path and the proxy path. The server starts on the direct path. When the direct path fails, the supervisor waits about 4 minutes for Tailscale to recover, then switches to the proxy path. Later the proxy path fails. The direct path works again by then, so after a wait of about a minute the supervisor switches back to the direct path." width="880" height="200">
+        </picture>
+      </figure>
 
-    <h2 id="guides">Guides by environment</h2>
-    <p>Pick the guide that matches where your server runs:</p>
+      <div class="section-head" id="guides">
+        <span class="section-tag">Guides</span>
+        <h2>Documentation by environment</h2>
+      </div>
+      <p>Choose the guide that matches your server or workflow:</p>
 
-    <div class="guide-grid">
-      <a class="guide-card" href="guides/hpc-slurm/">
-        <span class="guide-tag">HPC &amp; Slurm</span>
-        <h3>Tailscale on HPC and Slurm clusters without root</h3>
-        <p>SSH, VS Code Remote-SSH, Cursor, and Jupyter without a university VPN or jump host. Covers shared NFS home directories, <code>noexec</code> scratch installs, and CentOS 7.</p>
-      </a>
+      <div class="guide-index">
+        <a class="guide-link" href="guides/hpc-slurm/">
+          <div class="guide-link-top"><h3>HPC and Slurm clusters</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
+          <p>Shared NFS home directories, <code>noexec</code> scratch installs, auth keys, and CentOS 7 compatibility.</p>
+        </a>
+        <a class="guide-link" href="guides/kubernetes-docker/">
+          <div class="guide-link-top"><h3>Kubernetes pods and Docker</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
+          <p>Run without <code>CAP_NET_ADMIN</code>, <code>/dev/net/tun</code>, or <code>systemd</code>, with container UDP GSO turned off.</p>
+        </a>
+        <a class="guide-link" href="guides/vscode-jupyter-ssh/">
+          <div class="guide-link-top"><h3>VS Code, Cursor, and Jupyter</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
+          <p>Port 22 Tailscale SSH, port 2222 OpenSSH, direct web ports, and outbound <code>tailscale nc</code>.</p>
+        </a>
+        <a class="guide-link" href="guides/proxy-failover/">
+          <div class="guide-link-top"><h3>HTTP proxies and custom DERP</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
+          <p>Direct and proxy failover rules, mainland China networks, ML-KEM workaround, and peer relays.</p>
+        </a>
+        <a class="guide-link" href="guides/vs-manual-userspace/">
+          <div class="guide-link-top"><h3>vs manual tailscaled</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
+          <p>Compare Tailspace against <code>nohup tailscaled</code> and <code>systemd --user</code> setups.</p>
+        </a>
+        <a class="guide-link" href="guides/troubleshooting/">
+          <div class="guide-link-top"><h3>Troubleshooting and errors</h3><span class="guide-arrow" aria-hidden="true">&rarr;</span></div>
+          <p>Fixes for <code>/dev/net/tun</code>, <code>systemd</code>, expired keys, <code>noexec</code>, <code>flock</code>, and slow DERP relays.</p>
+        </a>
+      </div>
 
-      <a class="guide-card" href="guides/kubernetes-docker/">
-        <span class="guide-tag">Containers</span>
-        <h3>Tailscale in Kubernetes pods and unprivileged Docker</h3>
-        <p>Run <code>tailscaled</code> with no <code>CAP_NET_ADMIN</code>, no <code>/dev/net/tun</code>, no <code>systemd</code>, and UDP GSO turned off in containers.</p>
-      </a>
-
-      <a class="guide-card" href="guides/proxy-failover/">
-        <span class="guide-tag">Proxies &amp; relays</span>
-        <h3>HTTP proxy failover, custom DERP, and peer relays</h3>
-        <p>How Tailspace switches between direct internet and an <code>http://</code> proxy, avoids ML-KEM TLS drops, and speeds up relayed links.</p>
-      </a>
-
-      <a class="guide-card" href="guides/vs-manual-userspace/">
-        <span class="guide-tag">Comparison</span>
-        <h3>Tailspace vs manual tailscaled and systemd --user</h3>
-        <p>Where manual <code>nohup tailscaled --tun=userspace-networking</code> and <code>systemd --user</code> setups fail on shared servers.</p>
-      </a>
-    </div>
-
-    <h2>Everyday commands</h2>
-    <pre><code>tailspace status      # what it's doing, which path it's on, and why
+      <div class="section-head">
+        <span class="section-tag">CLI</span>
+        <h2>Everyday commands and requirements</h2>
+      </div>
+      <p>Tailspace also puts a pre-wired <code>tailscale</code> command in <code>~/.local/bin</code> that talks to your rootless socket with no extra flags:</p>
+      <pre><code>tailspace status      # what it's doing, which path it's on, and why
 tailspace stop        # stop Tailscale and keep it stopped across reboots
 tailspace start       # start it again
 tailspace restart     # restart Tailscale, even over Tailscale SSH
 tailspace self-update # update Tailspace itself
 tailspace uninstall   # log the server out and remove everything</code></pre>
-    <p>Tailspace also installs a pre-wired <code>tailscale</code> command in <code>~/.local/bin</code> that talks to your rootless socket, so <code>tailscale status</code>, <code>tailscale ping</code>, and <code>tailscale nc</code> work with no extra flags.</p>
+      <p>Measured on a Kubernetes pod with 124 usable cores and 1,435 visible processes running Tailscale 1.104.7, capping <code>GOMAXPROCS=8</code> cut Tailscale from 57 threads to 14 and probe CPU time from 57 ms to 15 ms. Requirements: Linux 3.2 or newer including CentOS 7, <code>bash</code> 4.2+, <code>curl</code> or <code>wget</code>, plus <code>awk</code>, <code>flock</code>, <code>setsid</code>, and <code>timeout</code>. See the full <a href="reference/">CLI and options reference</a>.</p>
 
-    <h2>Requirements</h2>
-    <ul>
-      <li>Linux 3.2 or newer, including CentOS 7, on <code>x86_64</code>, <code>arm64</code>, 32-bit ARM, <code>386</code>, or <code>riscv64</code>.</li>
-      <li><code>bash</code> 4.2 or newer, plus <code>curl</code> or <code>wget</code>.</li>
-      <li><code>awk</code>, <code>flock</code>, <code>setsid</code>, and <code>timeout</code>, which almost every distribution includes.</li>
-      <li>A normal, non-root Linux account.</li>
-    </ul>
-
-    <h2 id="faq">Frequently asked questions</h2>
-    <div class="faq-list">
-      <details open>
-        <summary>Can I install and run Tailscale without root or sudo?</summary>
-        <div class="faq-body">
-          <p>Yes. Tailspace downloads Tailscale's official static binaries into <code>~/.tailspace/bin</code> and runs <code>tailscaled --tun=userspace-networking</code>. It never opens <code>/dev/net/tun</code> and doesn't ask for <code>sudo</code>, <code>CAP_NET_ADMIN</code>, or <code>systemd</code>.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>Does Tailspace survive crashes and server reboots without systemd?</summary>
-        <div class="faq-body">
-          <p>Yes. A user-level supervisor restarts <code>tailscaled</code> 5 seconds after a crash and checks it every 20 seconds so hangs restart after 3 missed checks. After a reboot, a user cron job starts Tailspace right away where cron runs, and a 0.9 ms shell check brings it back on your next login everywhere else.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>Can I use VS Code Remote-SSH, Cursor, and Jupyter over rootless Tailscale?</summary>
-        <div class="faq-body">
-          <p>Yes. Tailspace turns on Tailscale SSH on port 22 and forwards OpenSSH on port 2222 when the server runs OpenSSH, so VS Code Remote-SSH, Cursor, <code>scp</code>, and <code>rsync</code> connect to your server's tailnet name. Local web servers such as Jupyter on port 8888 or TensorBoard on port 6006 work at <code>http://hostname:8888</code>.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>What happens if my server is behind an HTTP proxy or firewall?</summary>
-        <div class="faq-body">
-          <p>Export <code>https_proxy=http://HOST:PORT</code> before installing. Tailspace saves that proxy, switches between the direct path and the proxy path when either fails, and switches back once direct access stays healthy. See the <a href="guides/proxy-failover/">HTTP proxy failover guide</a>.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>Is Tailspace safe on a shared university or lab server?</summary>
-        <div class="faq-body">
-          <p>Tailscale runs only as your user account, <code>~/.tailspace</code> uses mode 700, and Tailscale's unauthenticated SOCKS5 and HTTP proxies stay off so other users on the host can't reach your tailnet. Pass keys with <code>TS_AUTHKEY=file:/path/to/key</code> so secrets never appear in <code>/proc/*/cmdline</code>.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>How much CPU and memory does Tailspace use?</summary>
-        <div class="faq-body">
-          <p>On a Kubernetes pod with 124 usable cores and 1,435 visible processes running Tailscale 1.104.7, Tailspace adds 0.9 ms to each new shell and uses 0.14% of one CPU core and 30 MB of memory at idle. Userspace networking moved about 10 Gbit/s in a local loopback test.</p>
-        </div>
-      </details>
-    </div>
-
-    <div class="actions">
-      <a class="btn btn-primary" href="https://github.com/ttttonyhe/tailspace">View on GitHub</a>
-      <a class="btn" href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.md">Full reference</a>
-      <a class="btn" href="llms.txt">llms.txt</a>
-    </div>
-  </main>
-
-  <footer class="site-footer">
-    <div class="wrap footer-inner">
-      <span>Tailspace is a single bash script under the <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT license</a>, and isn't affiliated with Tailscale Inc.</span>
-      <div class="footer-links">
-        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <a href="zh/" lang="zh-CN">简体中文</a>
-        <a href="llms.txt">llms.txt</a>
-        <a href="sitemap.xml">sitemap.xml</a>
+      <div class="section-head" id="faq">
+        <span class="section-tag">FAQ</span>
+        <h2>Frequently asked questions</h2>
       </div>
-    </div>
-  </footer>
+      <div class="faq-list">
+        <details open>
+          <summary>Can I install and run Tailscale without root or sudo?</summary>
+          <div class="faq-body"><p>Yes. Tailspace downloads Tailscale's official static binaries into <code>~/.tailspace/bin</code> and runs <code class="nowrap">tailscaled --tun=userspace-networking</code>. It never opens <code>/dev/net/tun</code> and doesn't ask for <code>sudo</code>, <code>CAP_NET_ADMIN</code>, or <code>systemd</code>.</p></div>
+        </details>
+        <details>
+          <summary>Does Tailspace survive crashes and server reboots without systemd?</summary>
+          <div class="faq-body"><p>Yes. A user-level supervisor restarts <code>tailscaled</code> 5 seconds after a crash and checks it every 20 seconds so hangs restart after 3 missed checks. After a reboot, a user cron job starts Tailspace right away where cron runs, and a 0.9 ms shell check brings it back on your next login everywhere else.</p></div>
+        </details>
+        <details>
+          <summary>Can I use VS Code Remote-SSH, Cursor, and Jupyter over rootless Tailscale?</summary>
+          <div class="faq-body"><p>Yes. Tailspace turns on Tailscale SSH on port 22 and forwards OpenSSH on port 2222 when the server runs OpenSSH, so VS Code Remote-SSH, Cursor, <code>scp</code>, and <code>rsync</code> connect to your server's tailnet name. Local web servers such as Jupyter on port 8888 or TensorBoard on port 6006 work at <code>http://hostname:8888</code>.</p></div>
+        </details>
+        <details>
+          <summary>What happens if my server is behind an HTTP proxy or firewall?</summary>
+          <div class="faq-body"><p>Export <code class="nowrap">https_proxy=http://HOST:PORT</code> before installing. Tailspace saves that proxy, switches between the direct path and the proxy path when either fails, and switches back once direct access stays healthy. See the <a href="guides/proxy-failover/">HTTP proxy failover guide</a>.</p></div>
+        </details>
+        <details>
+          <summary>Is Tailspace safe on a shared university or lab server?</summary>
+          <div class="faq-body"><p>Tailscale runs only as your user account, <code>~/.tailspace</code> uses mode 700, and Tailscale's unauthenticated SOCKS5 and HTTP proxies stay off so other users on the host can't reach your tailnet. Pass keys with <code class="nowrap">TS_AUTHKEY=file:/path/to/key</code> so secrets never appear in <code>/proc/*/cmdline</code>.</p></div>
+        </details>
+        <details>
+          <summary>How much CPU and memory does Tailspace use?</summary>
+          <div class="faq-body"><p>On a Kubernetes pod with 124 usable cores and 1,435 visible processes running Tailscale 1.104.7, Tailspace adds 0.9 ms to each new shell and uses 0.14% of one CPU core and 30 MB of memory at idle. Userspace networking moved about 10 Gbit/s in a local loopback test.</p></div>
+        </details>
+      </div>
+
+      <footer class="col-footer">
+        <span>Tailspace is a single bash script under the <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT license</a>, and isn't affiliated with Tailscale Inc.</span>
+        <div class="col-footer-links">
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+          <a href="zh/" lang="zh-CN">简体中文</a>
+          <a href="llms.txt">llms.txt</a>
+          <a href="sitemap.xml">sitemap.xml</a>
+        </div>
+      </footer>
+    </main>
+  </div>
 
   <script src="app.js"></script>
 </body>

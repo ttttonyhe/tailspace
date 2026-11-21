@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CLI, options &amp; settings reference · Tailspace</title>
+  <meta name="description" content="Complete Tailspace CLI commands, install and set options, TS_AUTHKEY and TAILSPACE_PREFIX variables, files layout, stop states, and Tailscale tuning.">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/reference/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/reference/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/reference/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/reference/">
+  <link rel="icon" href="../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="CLI, options &amp; settings reference · Tailspace">
+  <meta property="og:description" content="Complete Tailspace CLI commands, install and set options, TS_AUTHKEY and TAILSPACE_PREFIX variables, files layout, stop states, and Tailscale tuning.">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/reference/">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace: Run Tailscale in Rootless Mode">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CLI, options &amp; settings reference · Tailspace">
+  <meta name="twitter:description" content="Complete Tailspace CLI commands, install and set options, TS_AUTHKEY and TAILSPACE_PREFIX variables, files layout, stop states, and Tailscale tuning.">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../styles.css">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://ttttonyhe.github.io/tailspace/#website",
+      "name": "Tailspace",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "inLanguage": [
+        "en",
+        "zh-CN"
+      ],
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://ttttonyhe.github.io/tailspace/#author",
+      "name": "Tony L. He",
+      "url": "https://lipeng.ac"
+    },
+    {
+      "@type": "TechArticle",
+      "inLanguage": "en",
+      "headline": "CLI, options, and reference",
+      "description": "Complete Tailspace CLI commands, install and set options, TS_AUTHKEY and TAILSPACE_PREFIX variables, files layout, stop states, and Tailscale tuning.",
+      "url": "https://ttttonyhe.github.io/tailspace/reference/",
+      "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/reference/",
+      "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+      "datePublished": "2026-11-20",
+      "dateModified": "2026-11-20",
+      "author": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Tailspace"
+        },
+        {
+          "@type": "Thing",
+          "name": "Tailscale CLI"
+        },
+        {
+          "@type": "Thing",
+          "name": "Linux administration"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Tailspace",
+          "item": "https://ttttonyhe.github.io/tailspace/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Reference",
+          "item": "https://ttttonyhe.github.io/tailspace/reference/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I install Tailspace without putting an auth key in shell history or /proc?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Save the key to a mode 0600 file and pass TS_AUTHKEY=file:/path/to/key to the installer. Tailspace passes it to tailscale up through a pipe so it never appears in /proc/*/cmdline."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I pin a specific Tailscale version and turn off daily updates?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Run tailspace update 1.104.6 on an installed server, or pass --version 1.104.6 at install time. Both install that release and turn daily updates off."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I uninstall Tailspace cleanly?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Run tailspace uninstall. It logs the server out of your tailnet, stops the supervisor and tailscaled, and removes files, shell check lines, and user crontab entries while keeping shared binaries if another server uses the same prefix."
+          }
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="mobile-bar">
+    <a class="brand" href="../">
+      <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../assets/logo-dark.svg">
+          <img src="../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="Toggle navigation">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="Mobile">
+      <a href="../">Home</a>
+      <a href="../reference/" aria-current="page">Reference</a>
+      <a href="../guides/hpc-slurm/">HPC &amp; Slurm</a>
+      <a href="../guides/kubernetes-docker/">Kubernetes</a>
+      <a href="../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
+      <a href="../guides/proxy-failover/">Proxies &amp; DERP</a>
+      <a href="../guides/vs-manual-userspace/">Comparison</a>
+      <a href="../guides/troubleshooting/">Troubleshooting</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="../zh/reference/" lang="zh-CN">简体中文</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      <a href="../llms.txt">llms.txt</a>
+      <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="Site navigation">
+      <a class="brand" href="../">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../assets/logo-dark.svg">
+          <img src="../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="side-nav" aria-label="Primary">
+        <a href="../">Home</a>
+        <a href="../reference/" aria-current="page">Reference</a>
+        <a href="../guides/hpc-slurm/">HPC &amp; Slurm</a>
+        <a href="../guides/kubernetes-docker/">Kubernetes</a>
+        <a href="../guides/vscode-jupyter-ssh/">VS Code &amp; Jupyter</a>
+        <a href="../guides/proxy-failover/">Proxies &amp; DERP</a>
+        <a href="../guides/vs-manual-userspace/">Comparison</a>
+        <a href="../guides/troubleshooting/">Troubleshooting</a>
+      </nav>
+      <div class="side-utils">
+        <a href="../zh/reference/" lang="zh-CN">简体中文</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <a href="../llms.txt">llms.txt</a>
+        <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+      </div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+    </aside>
+
+    <main id="main" class="column">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="../">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <span>Reference</span>
+      </nav>
+
+      <h1>CLI, options, and reference</h1>
+      <p>Tailspace is one bash file installed into <code>~/.tailspace</code> with <code>tailspace</code> and <code>tailscale</code> linked into <code>~/.local/bin</code>. Every command, flag, environment variable, file path, and Tailscale tweak is listed below, mirroring <a href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.md">ADVANCED.md</a>.</p>
+
+      <div class="section-head">
+        <span class="section-tag">Commands</span>
+        <h2>CLI subcommands</h2>
+      </div>
+      <div class="table-wrap table-nowrap-first">
+        <table>
+          <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>tailspace install [options]</code></td><td>Install Tailspace and join this server to your tailnet. Safe to re-run; preserves saved settings.</td></tr>
+            <tr><td><code>tailspace status</code></td><td>Show whether Tailspace is running, which path it uses, any waiting update, and recent events.</td></tr>
+            <tr><td><code>tailspace start</code></td><td>Start the supervisor and <code>tailscaled</code>.</td></tr>
+            <tr><td><code>tailspace stop</code></td><td>Stop Tailscale and the supervisor, and keep them stopped across reboots.</td></tr>
+            <tr><td><code>tailspace restart</code></td><td>Restart Tailspace. Finishes even if run over Tailscale SSH while the connection drops.</td></tr>
+            <tr><td><code>tailspace set [options]</code></td><td>Change saved settings without reinstalling, for example <code>tailspace set --no-ssh</code>.</td></tr>
+            <tr><td><code>tailspace update [VERSION]</code></td><td>Update Tailscale now. Passing a version pins it and turns daily updates off.</td></tr>
+            <tr><td><code>tailspace logs [-f]</code></td><td>Show or follow <code>tailscaled.log</code>, like <code>tail -f</code>.</td></tr>
+            <tr><td><code>tailspace self-update</code></td><td>Download and install the latest Tailspace from the repository's <code>main</code> branch.</td></tr>
+            <tr><td><code>tailspace uninstall</code></td><td>Log this server out of your tailnet, stop Tailspace, and remove its files, cron job, and shell check.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-head">
+        <span class="section-tag">Options</span>
+        <h2>Install and set flags</h2>
+      </div>
+      <div class="table-wrap table-nowrap-first">
+        <table>
+          <thead><tr><th>Option</th><th>Default</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>--authkey KEY</code></td><td></td><td>Auth key, or <code>file:PATH</code>. Install only. Prefer <code>TS_AUTHKEY</code> to keep secrets off <code>/proc/*/cmdline</code>.</td></tr>
+            <tr><td><code>--tags TAGS</code></td><td></td><td>Server tags such as <code>tag:server</code>. Install only. Required with an OAuth client secret.</td></tr>
+            <tr><td><code>--version VERSION</code></td><td>latest</td><td>Install a pinned Tailscale version and turn daily updates off. Install only.</td></tr>
+            <tr><td><code>--hostname NAME</code></td><td>host name</td><td>The server's name in your tailnet.</td></tr>
+            <tr><td><code>--proxy URL | none</code></td><td><code>https_proxy</code></td><td>HTTP proxy URL for the proxy path, or <code>none</code>. Only <code>http://</code> works.</td></tr>
+            <tr><td><code>--udp-port PORT</code></td><td>0</td><td>UDP port for direct peer links, from 1024 to 65535. Pick one if opening a firewall port.</td></tr>
+            <tr><td><code>--[no-]autostart</code></td><td>on</td><td>Manage the shell check and user cron job that bring Tailspace back after reboots.</td></tr>
+            <tr><td><code>--[no-]auto-update</code></td><td>on</td><td>Daily Tailscale updates with up to 3-day session wait and rollback.</td></tr>
+            <tr><td><code>--[no-]ssh</code></td><td>on</td><td>Tailscale SSH on port 22, and OpenSSH on port 2222 when present. Off sends port 22 to OpenSSH.</td></tr>
+            <tr><td><code>--[no-]log-upload</code></td><td>on</td><td>Send Tailscale's diagnostic logs to Tailscale. Required by tailnets with network flow logs.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Environment variables</h3>
+      <ul class="spec-rows">
+        <li><span class="spec-key"><code>TS_AUTHKEY</code></span><span class="spec-val">Same as <code>--authkey</code>, while keeping the key out of the process list. Use <code class="nowrap">TS_AUTHKEY=file:/path/to/key</code> on a mode 0600 file to keep it out of shell history too.</span></li>
+        <li><span class="spec-key"><code>TAILSPACE_PREFIX</code></span><span class="spec-val">Install location instead of <code>~/.tailspace</code>, useful when <code>$HOME</code> is mounted <code>noexec</code> or blocks file locks. Later commands find the new path on their own.</span></li>
+      </ul>
+
+      <div class="section-head">
+        <span class="section-tag">Files</span>
+        <h2>Prefix layout and shared home directories</h2>
+      </div>
+      <pre><code>~/.tailspace/
+  tailspace           Tailspace itself; the shell check and cron job run this copy
+  bin/                the tailscale and tailscaled binaries
+  bin.prev/           the previous Tailscale version, for rolling back
+  config              your saved settings
+  bad-version         a version that failed health checks after an update
+  state/HOSTNAME/     everything that belongs to one server
+    tailscaled.state  the server's identity in your tailnet
+    tailscaled.log    the log, started over after 10 MB
+~/.local/bin/         the tailspace and tailscale commands</code></pre>
+      <p>Servers that share an NFS home directory share one <code>~/.tailspace</code> while keeping separate per-host state under <code>state/HOSTNAME/</code>. See the <a href="../guides/hpc-slurm/">HPC and Slurm guide</a>.</p>
+
+      <div class="section-head">
+        <span class="section-tag">Tuning</span>
+        <h2>What Tailspace changes in Tailscale</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Change</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td><code>GOMAXPROCS=8</code> when &gt; 8 cores</td><td>Cut Tailscale from 57 threads to 14 and probe CPU time from 57 ms to 15 ms on a 124-core Kubernetes pod.</td></tr>
+            <tr><td><code>TS_PORTLIST=false</code></td><td>Stops Tailscale from scanning open local ports every second for a list only the admin console shows.</td></tr>
+            <tr><td>TCP keepalives 60 s idle, every 15 s</td><td>Closes dead peer connections in minutes instead of two hours.</td></tr>
+            <tr><td>UDP GSO off in containers</td><td>Avoids severe throughput drops on container virtual networks; see <a href="https://github.com/tailscale/tailscale/issues/20858">tailscale#20858</a>.</td></tr>
+            <tr><td><code>GODEBUG=tlsmlkem=0</code></td><td>Prevents middleboxes from dropping ML-KEM TLS handshakes; see <a href="https://github.com/tailscale/tailscale/issues/20777">tailscale#20777</a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Use <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a> to define <code>tag:server</code>, permit <code>autogroup:nonroot</code> Tailscale SSH, and enable <code>cache-network-maps</code> on Tailscale 1.104 or newer. For error messages and stop reasons, see <a href="../guides/troubleshooting/">Troubleshooting</a>.</p>
+
+      <div class="section-head" id="faq">
+        <span class="section-tag">FAQ</span>
+        <h2>Frequently asked questions</h2>
+      </div>
+      <div class="faq-list">
+        <details open>
+          <summary>How do I install Tailspace without putting an auth key in shell history or /proc?</summary>
+          <div class="faq-body"><p>Save the key to a mode 0600 file and pass <code class="nowrap">TS_AUTHKEY=file:/path/to/key</code> to the installer. Tailspace passes it to <code>tailscale up</code> through a pipe so it never appears in <code>/proc/*/cmdline</code>.</p></div>
+        </details>
+        <details>
+          <summary>How do I pin a specific Tailscale version and turn off daily updates?</summary>
+          <div class="faq-body"><p>Run <code class="nowrap">tailspace update 1.104.6</code> on an installed server, or pass <code>--version 1.104.6</code> at install time. Both install that release and turn daily updates off.</p></div>
+        </details>
+        <details>
+          <summary>How do I uninstall Tailspace cleanly?</summary>
+          <div class="faq-body"><p>Run <code>tailspace uninstall</code>. It logs the server out of your tailnet, stops the supervisor and <code>tailscaled</code>, and removes files, shell check lines, and user crontab entries while keeping shared binaries if another server uses the same prefix.</p></div>
+        </details>
+      </div>
+
+      <footer class="col-footer">
+        <span>Tailspace is a single bash script under the <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT license</a>, and isn't affiliated with Tailscale Inc.</span>
+        <div class="col-footer-links">
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+          <a href="../zh/reference/" lang="zh-CN">简体中文</a>
+          <a href="../llms.txt">llms.txt</a>
+          <a href="../sitemap.xml">sitemap.xml</a>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="../app.js"></script>
+</body>
+</html>

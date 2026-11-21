@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VS Code Remote-SSH, Cursor &amp; Jupyter · Tailspace</title>
+  <meta name="description" content="Use VS Code Remote-SSH, Cursor, Jupyter, TensorBoard, scp, and rsync over rootless Tailscale without a VPN, jump host, or kubectl port-forward.">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/vscode-jupyter-ssh/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/">
+  <link rel="icon" href="../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="VS Code Remote-SSH, Cursor &amp; Jupyter · Tailspace">
+  <meta property="og:description" content="Use VS Code Remote-SSH, Cursor, Jupyter, TensorBoard, scp, and rsync over rootless Tailscale without a VPN, jump host, or kubectl port-forward.">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace: Run Tailscale in Rootless Mode">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="VS Code Remote-SSH, Cursor &amp; Jupyter · Tailspace">
+  <meta name="twitter:description" content="Use VS Code Remote-SSH, Cursor, Jupyter, TensorBoard, scp, and rsync over rootless Tailscale without a VPN, jump host, or kubectl port-forward.">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../styles.css">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://ttttonyhe.github.io/tailspace/#website",
+      "name": "Tailspace",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "inLanguage": [
+        "en",
+        "zh-CN"
+      ],
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://ttttonyhe.github.io/tailspace/#author",
+      "name": "Tony L. He",
+      "url": "https://lipeng.ac"
+    },
+    {
+      "@type": "TechArticle",
+      "inLanguage": "en",
+      "headline": "VS Code Remote-SSH, Cursor, and Jupyter without root",
+      "description": "Use VS Code Remote-SSH, Cursor, Jupyter, TensorBoard, scp, and rsync over rootless Tailscale without a VPN, jump host, or kubectl port-forward.",
+      "url": "https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/",
+      "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/",
+      "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+      "datePublished": "2026-11-20",
+      "dateModified": "2026-11-20",
+      "author": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Visual Studio Code"
+        },
+        {
+          "@type": "Thing",
+          "name": "Tailscale SSH"
+        },
+        {
+          "@type": "Thing",
+          "name": "Jupyter Notebook"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Tailspace",
+          "item": "https://ttttonyhe.github.io/tailspace/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "VS Code & Jupyter",
+          "item": "https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why does Tailscale SSH ask me to log in in the browser every 12 hours?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Tailscale's default SSH policy uses check mode, which re-authenticates every 12 hours. Change \"check\" to \"accept\" in your policy's ssh rule, as examples/policy.hujson does for tag:server."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I run curl or ping from a rootless Tailspace server to another tailnet device?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Standard ping and programs that don't support tailscale nc can't reach tailnet addresses without a kernel TUN interface, though tailscale ping HOST works and ssh, scp, rsync, and git work through ProxyCommand tailscale nc %h %p."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Will an automatic Tailscale update drop my VS Code Remote-SSH session?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Tailspace checks for active SSH sessions, connections forwarded to 127.0.0.1 or ::1, and LocalAPI clients, holding daily updates for up to 3 days until sessions close."
+          }
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="mobile-bar">
+    <a class="brand" href="../../">
+      <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="Toggle navigation">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="Mobile">
+      <a href="../../">Home</a>
+      <a href="../../reference/">Reference</a>
+      <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
+      <a href="../../guides/kubernetes-docker/">Kubernetes</a>
+      <a href="../../guides/vscode-jupyter-ssh/" aria-current="page">VS Code &amp; Jupyter</a>
+      <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
+      <a href="../../guides/vs-manual-userspace/">Comparison</a>
+      <a href="../../guides/troubleshooting/">Troubleshooting</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="../../zh/guides/vscode-jupyter-ssh/" lang="zh-CN">简体中文</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      <a href="../../llms.txt">llms.txt</a>
+      <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="Site navigation">
+      <a class="brand" href="../../">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../assets/logo-dark.svg">
+          <img src="../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="side-nav" aria-label="Primary">
+        <a href="../../">Home</a>
+        <a href="../../reference/">Reference</a>
+        <a href="../../guides/hpc-slurm/">HPC &amp; Slurm</a>
+        <a href="../../guides/kubernetes-docker/">Kubernetes</a>
+        <a href="../../guides/vscode-jupyter-ssh/" aria-current="page">VS Code &amp; Jupyter</a>
+        <a href="../../guides/proxy-failover/">Proxies &amp; DERP</a>
+        <a href="../../guides/vs-manual-userspace/">Comparison</a>
+        <a href="../../guides/troubleshooting/">Troubleshooting</a>
+      </nav>
+      <div class="side-utils">
+        <a href="../../zh/guides/vscode-jupyter-ssh/" lang="zh-CN">简体中文</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <a href="../../llms.txt">llms.txt</a>
+        <button class="side-btn" type="button" data-theme-toggle>Dark mode</button>
+      </div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+    </aside>
+
+    <main id="main" class="column">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="../../">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <span>VS Code &amp; Jupyter</span>
+      </nav>
+
+      <h1>VS Code Remote-SSH, Cursor, and Jupyter without root</h1>
+      <p>Once Tailspace joins a shared Linux server, HPC node, or Kubernetes pod to your tailnet, your laptop reaches SSH, editors, and local web UIs without a VPN, bastion jump host, VS Code Tunnel, or <code>kubectl port-forward</code>.</p>
+
+      <div class="section-head">
+        <span class="section-tag">SSH ports</span>
+        <h2>Port 22 Tailscale SSH and port 2222 OpenSSH</h2>
+      </div>
+      <p>Tailspace turns on Tailscale SSH on port 22. If the server also runs OpenSSH and none of your own processes holds <code>127.0.0.1:2222</code>, Tailspace makes OpenSSH available on port 2222:</p>
+      <ul class="spec-rows">
+        <li><span class="spec-key">Port 22 (Tailscale SSH)</span><span class="spec-val">Authenticates with your Tailscale identity instead of SSH keys. Tailscale knows which device connected. Change <code>"check"</code> to <code>"accept"</code> in your policy's <code>ssh</code> rule to skip Tailscale's 12-hour browser re-check.</span></li>
+        <li><span class="spec-key">Port 2222 (OpenSSH)</span><span class="spec-val">Works with your existing SSH keys, agent forwarding, and <code>~/.ssh/config</code>. Note that OpenSSH sees these connections arriving from <code>127.0.0.1</code>, so <code>from=</code> limits in <code>authorized_keys</code> can't tell client devices apart.</span></li>
+      </ul>
+
+      <div class="section-head">
+        <span class="section-tag">Editors</span>
+        <h2>VS Code Remote-SSH and Cursor config</h2>
+      </div>
+      <p>Add the server to <code>~/.ssh/config</code> on your laptop, using port 22 for Tailscale SSH or port 2222 for OpenSSH:</p>
+      <pre><code>Host lab-07
+  HostName lab-07
+  User you
+  Port 22</code></pre>
+      <p>Open Remote-SSH in VS Code or Cursor and connect to <code>lab-07</code>. To turn Tailscale SSH off and hand port 22 back to OpenSSH, run <code>tailspace set --no-ssh</code> on the server.</p>
+
+      <div class="section-head">
+        <span class="section-tag">Web UIs</span>
+        <h2>Jupyter, TensorBoard, and localhost ports</h2>
+      </div>
+      <p>In userspace mode, every port other than 22, 2222, and any <code>tailscale serve</code> port forwards straight to <code>127.0.0.1</code> on the server. Start Jupyter on port 8888 or TensorBoard on port 6006 and open it in your laptop browser with no <code>ssh -L</code> tunnel:</p>
+      <pre><code>jupyter lab --no-browser --port=8888
+# Open http://lab-07:8888 from any device on your tailnet</code></pre>
+      <p>Because restarting <code>tailscaled</code> cuts connections over Tailscale, Tailspace delays daily updates and direct failbacks up to 3 days while SSH sessions or connections to <code>127.0.0.1</code> or <code>::1</code> stay open. Still run long training jobs inside <code>tmux</code> or <code>screen</code>.</p>
+
+      <div class="section-head">
+        <span class="section-tag">Outbound</span>
+        <h2>Connecting from the server with tailscale nc</h2>
+      </div>
+      <p>Without root there is no kernel <code>tailscale0</code> interface, so programs on the server reach other tailnet devices through <code>tailscale nc</code>. Add this once to <code>~/.ssh/config</code> on the server:</p>
+      <pre><code>Host lab-01
+  User you
+  Port 2222
+  ProxyCommand tailscale nc %h %p</code></pre>
+      <p>Then <code>ssh lab-01</code>, <code>scp</code>, <code>rsync</code>, and <code>git</code> reach other Tailspace servers by name. If servers are tagged with <code>tag:server</code>, uncomment the <code>tag:server</code> to <code>tag:server</code> grant in <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a>. Tailspace leaves Tailscale's unauthenticated SOCKS5 and HTTP proxies off so other users on a shared server can't use your tailnet.</p>
+
+      <div class="section-head" id="faq">
+        <span class="section-tag">FAQ</span>
+        <h2>Frequently asked questions</h2>
+      </div>
+      <div class="faq-list">
+        <details open>
+          <summary>Why does Tailscale SSH ask me to log in in the browser every 12 hours?</summary>
+          <div class="faq-body"><p>Tailscale's default SSH policy uses check mode, which re-authenticates every 12 hours. Change <code>"check"</code> to <code>"accept"</code> in your policy's <code>ssh</code> rule, as <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a> does for <code>tag:server</code>.</p></div>
+        </details>
+        <details>
+          <summary>Can I run curl or ping from a rootless Tailspace server to another tailnet device?</summary>
+          <div class="faq-body"><p>Standard <code>ping</code> and programs that don't support <code>tailscale nc</code> can't reach tailnet addresses without a kernel TUN interface, though <code>tailscale ping HOST</code> works and <code>ssh</code>, <code>scp</code>, <code>rsync</code>, and <code>git</code> work through <code>ProxyCommand tailscale nc %h %p</code>.</p></div>
+        </details>
+        <details>
+          <summary>Will an automatic Tailscale update drop my VS Code Remote-SSH session?</summary>
+          <div class="faq-body"><p>No. Tailspace checks for active SSH sessions, connections forwarded to <code>127.0.0.1</code> or <code>::1</code>, and LocalAPI clients, holding daily updates for up to 3 days until sessions close.</p></div>
+        </details>
+      </div>
+
+      <footer class="col-footer">
+        <span>Tailspace is a single bash script under the <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT license</a>, and isn't affiliated with Tailscale Inc.</span>
+        <div class="col-footer-links">
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+          <a href="../../zh/guides/vscode-jupyter-ssh/" lang="zh-CN">简体中文</a>
+          <a href="../../llms.txt">llms.txt</a>
+          <a href="../../sitemap.xml">sitemap.xml</a>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="../../app.js"></script>
+</body>
+</html>

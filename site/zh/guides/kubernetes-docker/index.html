@@ -15,7 +15,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Tailspace">
   <meta property="og:title" content="Kubernetes 与容器免 root 运行 Tailscale · Tailspace">
-  <meta property="og:description" content="无需 CAP_NET_ADMIN、/dev/net/tun 或 systemd，一行命令在 Kubernetes Pod 与容器里运行 userspace Tailscale。">
+  <meta property="og:description" content="在没有 root、CAP_NET_ADMIN、/dev/net/tun 与 systemd 的 Kubernetes Pod 和无特权 Docker 容器中运行 Tailscale。">
   <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/zh/guides/kubernetes-docker/">
   <meta property="og:locale" content="zh_CN">
   <meta property="og:locale:alternate" content="en_US">
@@ -25,191 +25,253 @@
   <meta property="og:image:alt" content="Tailspace：非 Root 身份运行 Tailscale">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Kubernetes 与容器免 root 运行 Tailscale · Tailspace">
-  <meta name="twitter:description" content="无需 CAP_NET_ADMIN、/dev/net/tun 与 systemd，在 Kubernetes Pod 和无特权容器里运行 Tailscale。">
+  <meta name="twitter:description" content="在没有 root、CAP_NET_ADMIN、/dev/net/tun 与 systemd 的 Kubernetes Pod 和无特权 Docker 容器中运行 Tailscale。">
   <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
   <meta name="twitter:creator" content="@ttttonyhe">
   <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
   <link rel="stylesheet" href="../../../styles.css">
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "TechArticle",
-        "inLanguage": "zh-CN",
-        "headline": "Kubernetes Pod 与无特权 Docker 容器免 root 运行 Tailscale",
-        "description": "在没有 root、CAP_NET_ADMIN、/dev/net/tun 与 systemd 的 Kubernetes Pod 和无特权 Docker 容器中运行 Tailscale。",
-        "url": "https://ttttonyhe.github.io/tailspace/zh/guides/kubernetes-docker/",
-        "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/zh/guides/kubernetes-docker/",
-        "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
-        "datePublished": "2026-11-20",
-        "dateModified": "2026-11-20",
-        "author": {
-          "@type": "Person",
-          "name": "Tony L. He",
-          "url": "https://lipeng.ac"
-        },
-        "publisher": {
-          "@type": "Person",
-          "name": "Tony L. He",
-          "url": "https://lipeng.ac"
-        },
-        "about": [
-          { "@type": "Thing", "name": "Tailscale" },
-          { "@type": "Thing", "name": "Kubernetes" },
-          { "@type": "Thing", "name": "Docker" }
-        ]
-      },
-      {
-        "@type": "BreadcrumbList",
-        "itemListElement": [
-          { "@type": "ListItem", "position": 1, "name": "Tailspace", "item": "https://ttttonyhe.github.io/tailspace/zh/" },
-          { "@type": "ListItem", "position": 2, "name": "Kubernetes 与容器", "item": "https://ttttonyhe.github.io/tailspace/zh/guides/kubernetes-docker/" }
-        ]
-      },
-      {
-        "@type": "FAQPage",
-        "mainEntity": [
-          {
-            "@type": "Question",
-            "name": "在 Kubernetes 或 Docker 里运行 Tailspace 需要 CAP_NET_ADMIN 或 /dev/net/tun 吗？",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "不需要。Tailspace 始终以 --tun=userspace-networking 运行，不接触内核 TUN 网卡，也不需要任何特权配置。"
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "容器里没有 systemd 也没有 cron，重建后怎么恢复？",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Tailspace 会在你的 shell 启动文件里，比如 ~/.bashrc 和 ~/.zshrc，写入一段耗时约 0.9 毫秒的后台 shell 检查。Pod 重启后，你下次 kubectl exec 或打开 shell 就会把监管进程和 Tailscale 拉起来。"
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "如果 Deployment 重建后 Pod 主机名变了怎么办？",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Tailspace 按容器自身的系统主机名在 state/HOSTNAME/ 下保存状态，重建后拿到新主机名的 Pod 会被当作新服务器。想跨重建保留状态目录，可以使用 StatefulSet 或固定 spec.hostname，或者用可重复 auth key 再次运行 tailspace install。"
-            }
-          }
-        ]
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://ttttonyhe.github.io/tailspace/#website",
+      "name": "Tailspace",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "inLanguage": [
+        "en",
+        "zh-CN"
+      ],
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
       }
-    ]
-  }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://ttttonyhe.github.io/tailspace/#author",
+      "name": "Tony L. He",
+      "url": "https://lipeng.ac"
+    },
+    {
+      "@type": "TechArticle",
+      "inLanguage": "zh-CN",
+      "headline": "Kubernetes Pod 与无特权 Docker 容器免 root 运行 Tailscale",
+      "description": "在没有 root、CAP_NET_ADMIN、/dev/net/tun 与 systemd 的 Kubernetes Pod 和无特权 Docker 容器中运行 Tailscale。",
+      "url": "https://ttttonyhe.github.io/tailspace/zh/guides/kubernetes-docker/",
+      "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/zh/guides/kubernetes-docker/",
+      "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+      "datePublished": "2026-11-20",
+      "dateModified": "2026-11-20",
+      "author": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Tailscale"
+        },
+        {
+          "@type": "Thing",
+          "name": "Kubernetes"
+        },
+        {
+          "@type": "Thing",
+          "name": "Docker"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Tailspace",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Kubernetes 与容器",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/guides/kubernetes-docker/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "在 Kubernetes 或 Docker 里运行 Tailspace 需要 CAP_NET_ADMIN 或 /dev/net/tun 吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不需要。Tailspace 始终以 --tun=userspace-networking 运行，不接触内核 TUN 网卡，也不需要任何特权配置。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "容器里没有 systemd 也没有 cron，重建后怎么恢复？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Tailspace 会在你的 shell 启动文件里，比如 ~/.bashrc 和 ~/.zshrc，写入一段耗时约 0.9 毫秒的后台 shell 检查。Pod 重启后，你下次 kubectl exec 或打开 shell 就会把监管进程和 Tailscale 拉起来。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "如果 Deployment 重建后 Pod 主机名变了怎么办？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Tailspace 按容器自身的系统主机名在 state/HOSTNAME/ 下保存状态，重建后拿到新主机名的 Pod 会被当作新服务器。想跨重建保留状态目录，可以使用 StatefulSet 或固定 spec.hostname，或者用可重复 auth key 再次运行 tailspace install。"
+          }
+        }
+      ]
+    }
+  ]
+}
   </script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳到正文</a>
 
-  <header class="site-header">
-    <div class="wrap header-inner">
-      <a class="brand" href="../../">
+  <header class="mobile-bar">
+    <a class="brand" href="../../../zh/">
+      <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/logo-dark.svg">
+          <img src="../../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="切换导航">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="移动导航">
+      <a href="../../../zh/">首页</a>
+      <a href="../../../zh/reference/">完整参考</a>
+      <a href="../../../zh/guides/hpc-slurm/">超算与 Slurm</a>
+      <a href="../../../zh/guides/kubernetes-docker/" aria-current="page">Kubernetes</a>
+      <a href="../../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
+      <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
+      <a href="../../../zh/guides/vs-manual-userspace/">方案对比</a>
+      <a href="../../../zh/guides/troubleshooting/">故障排查</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="../../../guides/kubernetes-docker/" lang="en">English</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      <a href="../../../llms.txt">llms.txt</a>
+      <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="站点导航">
+      <a class="brand" href="../../../zh/">
         <picture>
           <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/logo-dark.svg">
-          <img src="../../../assets/logo-light.svg" alt="" width="28" height="28">
+          <img src="../../../assets/logo-light.svg" alt="" width="20" height="20">
         </picture>
         <span>Tailspace</span>
       </a>
-      <nav class="nav" aria-label="主导航">
-        <a href="../../">首页</a>
-        <a href="../hpc-slurm/">超算与 Slurm</a>
-        <a href="./" aria-current="page">Kubernetes</a>
-        <a href="../proxy-failover/">代理切换</a>
-        <a href="../vs-manual-userspace/">方案对比</a>
-        <span class="nav-sep" aria-hidden="true"></span>
+      <nav class="side-nav" aria-label="主导航">
+        <a href="../../../zh/">首页</a>
+        <a href="../../../zh/reference/">完整参考</a>
+        <a href="../../../zh/guides/hpc-slurm/">超算与 Slurm</a>
+        <a href="../../../zh/guides/kubernetes-docker/" aria-current="page">Kubernetes</a>
+        <a href="../../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
+        <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
+        <a href="../../../zh/guides/vs-manual-userspace/">方案对比</a>
+        <a href="../../../zh/guides/troubleshooting/">故障排查</a>
+      </nav>
+      <div class="side-utils">
         <a href="../../../guides/kubernetes-docker/" lang="en">English</a>
         <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
-        <button id="theme-toggle" class="theme-btn" type="button">深色</button>
+        <a href="../../../llms.txt">llms.txt</a>
+        <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
+      </div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+    </aside>
+
+    <main id="main" class="column">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="../../../zh/">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <span>Kubernetes 与容器</span>
       </nav>
-    </div>
-  </header>
 
-  <main id="main" class="wrap">
-    <nav class="breadcrumb" aria-label="面包屑导航">
-      <a href="../../">Tailspace</a>
-      <span aria-hidden="true">/</span>
-      <span>Kubernetes 与容器</span>
-    </nav>
+      <h1>Kubernetes Pod 与无特权 Docker 容器免 root 运行 Tailscale</h1>
+      <p>算力平台上的 GPU Pod、托管 Kubernetes 开发容器和无特权 Docker 容器，通常都没有 <code>CAP_NET_ADMIN</code>、<code>/dev/net/tun</code>、<code>systemd</code> 或 <code>cron</code>。Tailspace 不需要改 Pod YAML 或容器权限，一行命令装进家目录，就能用 Tailscale SSH、VS Code Remote-SSH 连进容器并访问本地端口。</p>
 
-    <h1>Kubernetes Pod 与无特权 Docker 容器免 root 运行 Tailscale</h1>
-    <p class="lead">
-      算力平台上的 GPU Pod、托管 Kubernetes 开发容器和无特权 Docker 容器，通常都没有 <code>CAP_NET_ADMIN</code>、<code>/dev/net/tun</code>、<code>systemd</code> 或 <code>cron</code>。Tailspace 不需要改 Pod YAML 或容器权限，一行命令装进家目录，就能用 Tailscale SSH、VS Code Remote-SSH 连进容器并访问本地端口。
-    </p>
-
-    <h2>无需任何容器特权</h2>
-    <p>常规的 Tailscale 容器部署方案要求开启 <code>CAP_NET_ADMIN</code> 并挂载宿主机的 <code>/dev/net/tun</code>。在无法修改 SecurityContext 的受限容器里，Tailspace 通过 <code>tailscaled --tun=userspace-networking</code> 绕过内核网卡限制：</p>
-    <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</code></pre>
-    <p>如果是无交互启动脚本或频繁重建的 Pod，把可重复 auth key 挂载成 <code>0600</code> 权限的 Kubernetes Secret 文件再通过 <code>TS_AUTHKEY</code> 传入：</p>
-    <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | \
+      <div class="section-head">
+        <span class="section-tag">安装</span>
+        <h2>无需 CAP_NET_ADMIN 与 /dev/net/tun</h2>
+      </div>
+      <p>常规 Tailscale 容器部署方案要求开启 <code>CAP_NET_ADMIN</code> 并挂载 <code>/dev/net/tun</code>。Tailspace 通过 <code class="nowrap">tailscaled --tun=userspace-networking</code> 绕过内核网卡限制：</p>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | bash</code></pre>
+      <p>无交互启动脚本或频繁重建的 Pod 可把可重复 auth key 挂载为 <code>0600</code> 权限的 Kubernetes Secret 再通过 <code>TS_AUTHKEY</code> 传入：</p>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/ttttonyhe/tailspace/main/tailspace | \
   TS_AUTHKEY=file:/var/run/secrets/tailscale/authkey bash -s -- install --hostname gpu-pod-01</code></pre>
 
-    <h2>Tailspace 在容器环境里的处理方式</h2>
-    <ul>
-      <li><strong>容器内关闭 UDP GSO。</strong> UDP GSO 在部分容器虚拟网络上会让吞吐量大幅下降，见 <a href="https://github.com/tailscale/tailscale/issues/20858">tailscale#20858</a>。Tailspace 通过 cgroup 命名空间识别容器环境并关闭 UDP GSO。</li>
-      <li><strong>不依赖 systemd、init 与 cron。</strong> 没有 init 进程的容器不会回收僵尸进程，Tailspace 读取 <code>/proc</code> 状态把僵尸进程当作已退出；即使容器开启了 <code>hostPID: true</code>，Tailspace 也会核对根文件系统，不会误用宿主机的 crond。</li>
-      <li><strong>共享 PID 命名空间也安全。</strong> 进程查找不使用 <code>ps</code> 或 <code>pgrep</code>，只通过 <code>/proc/PID/fd</code> 和 <code>--statedir</code> 识别属于你自己的 <code>tailscaled</code> 和监管进程，不影响同节点其他 Pod。</li>
-      <li><strong>识别 Pod 重启。</strong> Tailspace 同时记录内核 boot ID 和容器根 overlay 目录。Pod 在保留主机名和持久化 <code>$HOME</code> 的前提下重启后，会被识别为一次重启服务器，下次 <code>kubectl exec</code> 时清除此前的放弃记录。</li>
-      <li><strong>限制宿主机多核下的 Go 线程数。</strong> 在 124 核宿主机上的容器里，<code>GOMAXPROCS=8</code> 把 Tailscale 的线程从 57 降到 14，单次状态检查的 CPU 时间从 57 毫秒降到 15 毫秒。</li>
-    </ul>
-
-    <h2>不用 kubectl port-forward 访问本地端口</h2>
-    <p>在 userspace 模式下，除 22 端口的 Tailscale SSH 和运行了 OpenSSH 时的 2222 端口外，访问 Pod tailnet IP 的任意端口都会转发到容器内的 <code>127.0.0.1</code>。启动 8888 端口的 Jupyter、6006 端口的 TensorBoard 或 8000 端口的本地服务，本机浏览器打开 <code>http://gpu-pod-01:8888</code> 就能访问。</p>
-
-    <h2>真实 Kubernetes Pod 实测开销</h2>
-    <p>在一台有 124 个可用核心和 1,435 个可见进程、运行 Tailscale 1.104.7 的 Kubernetes Pod 上测得：</p>
-    <figure class="figure">
-      <picture>
-        <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/metrics-dark.svg">
-        <img src="../../../assets/metrics-light.svg"
-             alt="在一个运行 Tailscale 1.104.7 的 Kubernetes Pod 上测得：每个新 shell 多 0.9 毫秒，空闲时占用一个 CPU 核心的 0.14% 和 30 MB 内存。"
-             width="880" height="112">
-      </picture>
-    </figure>
-    <p>同一 Pod 上，经由 userspace 网络发往自身 tailnet IPv4 地址的单连接吞吐实测约 10 Gbit/s，这个测试不含 WireGuard 和网络本身。</p>
-
-    <h2>常见问题</h2>
-    <div class="faq-list">
-      <details open>
-        <summary>在 Kubernetes 或 Docker 里运行 Tailspace 需要 CAP_NET_ADMIN 或 /dev/net/tun 吗？</summary>
-        <div class="faq-body">
-          <p>不需要。Tailspace 始终以 <code>--tun=userspace-networking</code> 运行，不接触内核 TUN 网卡，也不需要任何特权配置。</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>容器里没有 systemd 也没有 cron，重建后怎么恢复？</summary>
-        <div class="faq-body">
-          <p>Tailspace 会在你的 shell 启动文件里，比如 <code>~/.bashrc</code> 和 <code>~/.zshrc</code>，写入一段耗时约 0.9 毫秒的后台 shell 检查。Pod 重启后，你下次 <code>kubectl exec</code> 或打开 shell 就会把监管进程和 Tailscale 拉起来。</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>如果 Deployment 重建后 Pod 主机名变了怎么办？</summary>
-        <div class="faq-body">
-          <p>Tailspace 按容器自身的系统主机名在 <code>state/HOSTNAME/</code> 下保存状态，重建后拿到新主机名的 Pod 会被当作新服务器。想跨重建保留状态目录，可以使用 StatefulSet 或固定 <code>spec.hostname</code>，或者用可重复 auth key 再次运行 <code>tailspace install</code>。</p>
-        </div>
-      </details>
-    </div>
-
-    <div class="actions">
-      <a class="btn btn-primary" href="../../">返回 Tailspace 主页</a>
-      <a class="btn" href="../proxy-failover/">下一篇：HTTP 代理切换指南</a>
-      <a class="btn" href="https://github.com/ttttonyhe/tailspace/blob/main/ADVANCED.zh-CN.md">完整参考</a>
-    </div>
-  </main>
-
-  <footer class="site-footer">
-    <div class="wrap footer-inner">
-      <span>Tailspace · MIT 许可证 · <a href="https://github.com/ttttonyhe/tailspace">github.com/ttttonyhe/tailspace</a></span>
-      <div class="footer-links">
-        <a href="../../">首页</a>
-        <a href="../../../guides/kubernetes-docker/" lang="en">English</a>
-        <a href="../../../llms.txt">llms.txt</a>
+      <div class="section-head">
+        <span class="section-tag">容器适配</span>
+        <h2>Tailspace 在容器环境里的处理方式</h2>
       </div>
-    </div>
-  </footer>
+      <ul class="spec-rows">
+        <li><span class="spec-key">容器内关闭 UDP GSO</span><span class="spec-val">UDP GSO 在部分容器虚拟网络上会让吞吐量大幅下降，见 <a href="https://github.com/tailscale/tailscale/issues/20858">tailscale#20858</a>。Tailspace 通过 cgroup 命名空间识别容器并关闭 UDP GSO。</span></li>
+        <li><span class="spec-key">无 systemd 与 cron</span><span class="spec-val">通过 <code>/proc</code> 把未被 init 回收的僵尸进程视作已退出；即使容器开启了 <code>hostPID: true</code>，也会核对根文件系统，不误用宿主机的 crond。</span></li>
+        <li><span class="spec-key">共享 PID 命名空间</span><span class="spec-val">不使用 <code>ps</code> 或 <code>pgrep</code>，只通过 <code>/proc/PID/fd</code> 和 <code>--statedir</code> 识别你自己的 <code>tailscaled</code> 和监管进程，不影响同节点其他 Pod。</span></li>
+        <li><span class="spec-key">识别 Pod 重启</span><span class="spec-val">同时记录内核 boot ID 和容器根 overlay 目录。Pod 保留主机名和持久化 <code>$HOME</code> 重启时被视作重启服务器，下次 <code>kubectl exec</code> 自动清除此前的放弃记录。</span></li>
+        <li><span class="spec-key">宿主机多核限制</span><span class="spec-val">在 124 核宿主机上的容器里，<code>GOMAXPROCS=8</code> 把线程从 57 降到 14，单次状态检查的 CPU 时间从 57 毫秒降到 15 毫秒。</span></li>
+      </ul>
+
+      <div class="section-head">
+        <span class="section-tag">实测数据</span>
+        <h2>真实 Kubernetes Pod 资源占用</h2>
+      </div>
+      <p>在 userspace 模式下，访问 Pod tailnet IP 的其他端口都会转发到容器内的 <code>127.0.0.1</code>，8888 端口的 Jupyter 或 6006 端口的 TensorBoard 直接访问 <code>http://gpu-pod-01:8888</code> 即可，不用 <code>kubectl port-forward</code>。在有 124 个可用核心和 1,435 个可见进程、运行 Tailscale 1.104.7 的 Pod 上测得：</p>
+      <figure class="figure">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/metrics-dark.svg">
+          <img src="../../../assets/metrics-light.svg" alt="在一个运行 Tailscale 1.104.7 的 Kubernetes Pod 上测得：每个新 shell 多 0.9 毫秒，空闲时占用一个 CPU 核心的 0.14% 和 30 MB 内存。" width="880" height="112">
+        </picture>
+      </figure>
+      <p>同一 Pod 上经由 userspace 网络发往自身 tailnet IPv4 地址的单连接吞吐实测约 10 Gbit/s，这个测试不含 WireGuard 和网络本身。另见 <a href="../vscode-jupyter-ssh/">VS Code 与 Jupyter 指南</a> 和 <a href="../vs-manual-userspace/">手动方案对比</a>。</p>
+
+      <div class="section-head" id="faq">
+        <span class="section-tag">常见问题</span>
+        <h2>常见问题</h2>
+      </div>
+      <div class="faq-list">
+        <details open>
+          <summary>在 Kubernetes 或 Docker 里运行 Tailspace 需要 CAP_NET_ADMIN 或 /dev/net/tun 吗？</summary>
+          <div class="faq-body"><p>不需要。Tailspace 始终以 <code class="nowrap">--tun=userspace-networking</code> 运行，不接触内核 TUN 网卡，也不需要任何特权配置。</p></div>
+        </details>
+        <details>
+          <summary>容器里没有 systemd 也没有 cron，重建后怎么恢复？</summary>
+          <div class="faq-body"><p>Tailspace 会在你的 shell 启动文件里，比如 <code>~/.bashrc</code> 和 <code>~/.zshrc</code>，写入一段耗时约 0.9 毫秒的后台 shell 检查。Pod 重启后，你下次 <code>kubectl exec</code> 或打开 shell 就会把监管进程和 Tailscale 拉起来。</p></div>
+        </details>
+        <details>
+          <summary>如果 Deployment 重建后 Pod 主机名变了怎么办？</summary>
+          <div class="faq-body"><p>Tailspace 按容器自身的系统主机名在 <code>state/HOSTNAME/</code> 下保存状态，重建后拿到新主机名的 Pod 会被当作新服务器。想跨重建保留状态目录，可以使用 StatefulSet 或固定 <code>spec.hostname</code>，或者用可重复 auth key 再次运行 <code>tailspace install</code>。</p></div>
+        </details>
+      </div>
+
+      <footer class="col-footer">
+        <span>Tailspace 以 <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT 许可证</a>发布，与 Tailscale Inc. 没有关联。</span>
+        <div class="col-footer-links">
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+          <a href="../../../guides/kubernetes-docker/" lang="en">English</a>
+          <a href="../../../llms.txt">llms.txt</a>
+          <a href="../../../sitemap.xml">sitemap.xml</a>
+        </div>
+      </footer>
+    </main>
+  </div>
 
   <script src="../../../app.js"></script>
 </body>

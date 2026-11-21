@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>故障排查与常见报错 · Tailspace</title>
+  <meta name="description" content="排查 /dev/net/tun、systemd --user、controlplane.tailscale.com、180 天密钥过期、noexec 家目录、flock、SSH 拒绝与 DERP 慢。">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://ttttonyhe.github.io/tailspace/zh/guides/troubleshooting/">
+  <link rel="alternate" hreflang="en" href="https://ttttonyhe.github.io/tailspace/guides/troubleshooting/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ttttonyhe.github.io/tailspace/zh/guides/troubleshooting/">
+  <link rel="alternate" hreflang="x-default" href="https://ttttonyhe.github.io/tailspace/guides/troubleshooting/">
+  <link rel="icon" href="../../../assets/logo-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../../../assets/logo-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Tailspace">
+  <meta property="og:title" content="故障排查与常见报错 · Tailspace">
+  <meta property="og:description" content="排查 /dev/net/tun、systemd --user、controlplane.tailscale.com、180 天密钥过期、noexec 家目录、flock、SSH 拒绝与 DERP 慢。">
+  <meta property="og:url" content="https://ttttonyhe.github.io/tailspace/zh/guides/troubleshooting/">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Tailspace：非 Root 身份运行 Tailscale">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="故障排查与常见报错 · Tailspace">
+  <meta name="twitter:description" content="排查 /dev/net/tun、systemd --user、controlplane.tailscale.com、180 天密钥过期、noexec 家目录、flock、SSH 拒绝与 DERP 慢。">
+  <meta name="twitter:image" content="https://ttttonyhe.github.io/tailspace/assets/social-preview.png">
+  <meta name="twitter:creator" content="@ttttonyhe">
+  <script>try{var t=localStorage.getItem("tailspace-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="../../../styles.css">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://ttttonyhe.github.io/tailspace/#website",
+      "name": "Tailspace",
+      "url": "https://ttttonyhe.github.io/tailspace/",
+      "inLanguage": [
+        "en",
+        "zh-CN"
+      ],
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://ttttonyhe.github.io/tailspace/#author",
+      "name": "Tony L. He",
+      "url": "https://lipeng.ac"
+    },
+    {
+      "@type": "TechArticle",
+      "inLanguage": "zh-CN",
+      "headline": "故障排查与常见报错",
+      "description": "排查 /dev/net/tun、systemd --user、controlplane.tailscale.com、180 天密钥过期、noexec 家目录、flock、SSH 拒绝与 DERP 慢。",
+      "url": "https://ttttonyhe.github.io/tailspace/zh/guides/troubleshooting/",
+      "mainEntityOfPage": "https://ttttonyhe.github.io/tailspace/zh/guides/troubleshooting/",
+      "image": "https://ttttonyhe.github.io/tailspace/assets/social-preview.png",
+      "datePublished": "2026-11-20",
+      "dateModified": "2026-11-20",
+      "author": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "publisher": {
+        "@id": "https://ttttonyhe.github.io/tailspace/#author"
+      },
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Tailscale"
+        },
+        {
+          "@type": "Thing",
+          "name": "Linux troubleshooting"
+        },
+        {
+          "@type": "Thing",
+          "name": "Userspace networking"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Tailspace",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "故障排查",
+          "item": "https://ttttonyhe.github.io/tailspace/zh/guides/troubleshooting/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "远程 Tailspace 服务器的 180 天密钥过期了怎么恢复？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "在 Tailscale 管理后台的 Machines 页面选择 Temporarily extend key，并在 30 分钟内关闭密钥过期。之后重启服务器或等待下次重启服务器，Tailspace 会清除上次启动的登录放弃记录，通过 cron 或下次登录重新上线。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "为什么安装提示文件锁不可用或路径太长？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "部分网络文件系统不支持 flock 独占锁，或家目录路径过深超过了 Unix socket 长度上限。用 TAILSPACE_PREFIX=/tmp/$USER/ts 或 /scratch/$USER/tailspace 装到本地短路径即可。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "为什么 Tailspace 在连续失败 5 次后停了下来？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "当 tailscaled 连续 5 次崩溃、无响应或在网络正常时持续离线，Tailspace 会停止重试以免空耗资源。查看 tailspace logs 排除原因后，运行 tailspace start 即可恢复。"
+          }
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+
+  <header class="mobile-bar">
+    <a class="brand" href="../../../zh/">
+      <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/logo-dark.svg">
+          <img src="../../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+      <span>Tailspace</span>
+    </a>
+    <button class="menu-btn" type="button" data-menu-btn aria-expanded="false" aria-label="切换导航">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <nav aria-label="移动导航">
+      <a href="../../../zh/">首页</a>
+      <a href="../../../zh/reference/">完整参考</a>
+      <a href="../../../zh/guides/hpc-slurm/">超算与 Slurm</a>
+      <a href="../../../zh/guides/kubernetes-docker/">Kubernetes</a>
+      <a href="../../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
+      <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
+      <a href="../../../zh/guides/vs-manual-userspace/">方案对比</a>
+      <a href="../../../zh/guides/troubleshooting/" aria-current="page">故障排查</a>
+    </nav>
+    <div class="mobile-drawer-utils">
+      <a href="../../../guides/troubleshooting/" lang="en">English</a>
+      <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+      <a href="../../../llms.txt">llms.txt</a>
+      <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="站点导航">
+      <a class="brand" href="../../../zh/">
+        <picture>
+          <source data-theme-source media="(prefers-color-scheme: dark)" srcset="../../../assets/logo-dark.svg">
+          <img src="../../../assets/logo-light.svg" alt="" width="20" height="20">
+        </picture>
+        <span>Tailspace</span>
+      </a>
+      <nav class="side-nav" aria-label="主导航">
+        <a href="../../../zh/">首页</a>
+        <a href="../../../zh/reference/">完整参考</a>
+        <a href="../../../zh/guides/hpc-slurm/">超算与 Slurm</a>
+        <a href="../../../zh/guides/kubernetes-docker/">Kubernetes</a>
+        <a href="../../../zh/guides/vscode-jupyter-ssh/">VS Code 与 Jupyter</a>
+        <a href="../../../zh/guides/proxy-failover/">代理与中继</a>
+        <a href="../../../zh/guides/vs-manual-userspace/">方案对比</a>
+        <a href="../../../zh/guides/troubleshooting/" aria-current="page">故障排查</a>
+      </nav>
+      <div class="side-utils">
+        <a href="../../../guides/troubleshooting/" lang="en">English</a>
+        <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+        <a href="../../../llms.txt">llms.txt</a>
+        <button class="side-btn" type="button" data-theme-toggle>深色主题</button>
+      </div>
+      <div class="side-meta"><span class="status-dot" aria-hidden="true"></span><span>v__TAILSPACE_VERSION__ · MIT</span></div>
+    </aside>
+
+    <main id="main" class="column">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="../../../zh/">Tailspace</a>
+        <span aria-hidden="true">/</span>
+        <span>故障排查</span>
+      </nav>
+
+      <h1>故障排查与常见报错</h1>
+      <p>先运行 <code>tailspace status</code>，详细信息看 <code>tailspace logs -f</code>。下面列出免 root 运行 Tailscale 最常见的报错和停止状态。</p>
+
+      <div class="section-head">
+        <span class="section-tag">常见报错</span>
+        <h2>报错与处理方法</h2>
+      </div>
+      <ul class="spec-rows">
+        <li><span class="spec-key"><code>failed to open /dev/net/tun</code></span><span class="spec-val">常规 Tailscale 安装需要 root 和 <code>CAP_NET_ADMIN</code> 打开内核 TUN 网卡。改用 Tailspace 即可，它始终以 <code class="nowrap">tailscaled --tun=userspace-networking</code> 运行，不访问 <code>/dev/net/tun</code>。</span></li>
+        <li><span class="spec-key"><code>System has not been booted with systemd</code></span><span class="spec-val">在容器或老系统运行 <code>systemctl --user</code> 时出现。Tailspace 不依赖 <code>systemd</code>，监管进程是普通用户进程，通过 cron 和 shell 检查恢复。</span></li>
+        <li><span class="spec-key">连不上 <code>controlplane.tailscale.com</code></span><span class="spec-val">服务器需要 HTTP 代理。安装前执行 <code class="nowrap">export https_proxy=http://HOST:PORT</code>，或运行 <code>tailspace set --proxy http://HOST:PORT</code>。详见<a href="../proxy-failover/">代理切换指南</a>。</span></li>
+        <li><span class="spec-key">Tailscale SSH 拒绝连接</span><span class="spec-val">确认访问控制策略里有允许你的 <code>ssh</code> 规则且包含 <code>autogroup:nonroot</code>，参考 <a href="https://github.com/ttttonyhe/tailspace/blob/main/examples/policy.hujson"><code>examples/policy.hujson</code></a>，并用安装 Tailspace 的账号连接。</span></li>
+        <li><span class="spec-key">服务器重启后没有运行</span><span class="spec-val">这台服务器没有 cron 且重启后还没人登录过。用安装 Tailspace 之前的方式或 <code>kubectl exec</code> 登录一次，shell 检查就会拉起它。</span></li>
+        <li><span class="spec-key"><code>tailscaled</code> 无法运行或 <code>noexec</code></span><span class="spec-val">家目录禁止执行程序、文件锁失败或 socket 路径太长。用 <code class="nowrap">TAILSPACE_PREFIX=/scratch/$USER/tailspace</code> 装到本地短路径。</span></li>
+        <li><span class="spec-key">传输慢或打字延迟</span><span class="spec-val">运行 <code>tailspace status</code>，若活动设备旁显示 <code>relay</code>，说明流量走了较远的 DERP 中继，可按<a href="../proxy-failover/">代理与中继指南</a>部署自建 DERP 或 Peer Relay。</span></li>
+      </ul>
+
+      <div class="section-head">
+        <span class="section-tag">停止状态</span>
+        <h2>Tailspace 何时会放弃</h2>
+      </div>
+      <p>遇到需要人处理的问题时，Tailspace 会停下并把原因写进 <code>tailspace status</code>：</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>status 显示</th><th>发生了什么</th><th>怎么办</th></tr></thead>
+          <tbody>
+            <tr><td>stopped with <code>tailspace stop</code></td><td>你停止了 Tailspace</td><td>运行 <code>tailspace start</code></td></tr>
+            <tr><td>this server must log in again</td><td>密钥过期，或有人把它从你的 tailnet 删除</td><td>再运行一次 <code>tailspace install</code></td></tr>
+            <tr><td>adding this server to your tailnet failed</td><td>auth key 已过期或用完，或策略未定义标签</td><td>用有效的 auth key 运行 <code>tailspace install</code></td></tr>
+            <tr><td>Tailscale failed 5 times in a row</td><td>Tailscale 连续 5 次崩溃、无响应或网络正常时持续离线</td><td>先看 <code>tailspace logs</code>，再运行 <code>tailspace start</code></td></tr>
+            <tr><td>no reason was saved</td><td>停下时磁盘已满，没能写下原因</td><td>腾出空间，再运行 <code>tailspace start</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>因 <code>this server must log in again</code> 或连续失败 5 次而停止时，放弃记录只持续到下次重启服务器。若远程服务器 180 天密钥过期，在管理后台 Machines 页面点 Temporarily extend key 并在 30 分钟内关闭密钥过期，然后重启服务器即可经 cron 或下次登录重新上线。</p>
+
+      <div class="section-head" id="faq">
+        <span class="section-tag">常见问题</span>
+        <h2>常见问题</h2>
+      </div>
+      <div class="faq-list">
+        <details open>
+          <summary>远程 Tailspace 服务器的 180 天密钥过期了怎么恢复？</summary>
+          <div class="faq-body"><p>在 Tailscale 管理后台的 Machines 页面选择 Temporarily extend key，并在 30 分钟内关闭密钥过期。之后重启服务器或等待下次重启服务器，Tailspace 会清除上次启动的登录放弃记录，通过 cron 或下次登录重新上线。</p></div>
+        </details>
+        <details>
+          <summary>为什么安装提示文件锁不可用或路径太长？</summary>
+          <div class="faq-body"><p>部分网络文件系统不支持 <code>flock</code> 独占锁，或家目录路径过深超过了 Unix socket 长度上限。用 <code class="nowrap">TAILSPACE_PREFIX=/tmp/$USER/ts</code> 或 <code>/scratch/$USER/tailspace</code> 装到本地短路径即可。</p></div>
+        </details>
+        <details>
+          <summary>为什么 Tailspace 在连续失败 5 次后停了下来？</summary>
+          <div class="faq-body"><p>当 <code>tailscaled</code> 连续 5 次崩溃、无响应或在网络正常时持续离线，Tailspace 会停止重试以免空耗资源。查看 <code>tailspace logs</code> 排除原因后，运行 <code>tailspace start</code> 即可恢复。</p></div>
+        </details>
+      </div>
+
+      <footer class="col-footer">
+        <span>Tailspace 以 <a href="https://github.com/ttttonyhe/tailspace/blob/main/LICENSE">MIT 许可证</a>发布，与 Tailscale Inc. 没有关联。</span>
+        <div class="col-footer-links">
+          <a href="https://github.com/ttttonyhe/tailspace">GitHub</a>
+          <a href="../../../guides/troubleshooting/" lang="en">English</a>
+          <a href="../../../llms.txt">llms.txt</a>
+          <a href="../../../sitemap.xml">sitemap.xml</a>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="../../../app.js"></script>
+</body>
+</html>

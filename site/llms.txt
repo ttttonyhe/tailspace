@@ -11,23 +11,29 @@
 
 ## Primary docs
 
-- [Homepage (English)](https://ttttonyhe.github.io/tailspace/): Quick install, key capabilities, benchmarks, and FAQ.
+- [Homepage (English)](https://ttttonyhe.github.io/tailspace/): Quick install, supervision overview, failover, benchmarks, and FAQ.
 - [Homepage (简体中文)](https://ttttonyhe.github.io/tailspace/zh/): Chinese overview, install, and FAQ.
+- [CLI and options reference](https://ttttonyhe.github.io/tailspace/reference/): Commands, install/set options, environment variables, files layout, stop reasons, and Tailscale tuning.
 - [Full documentation bundle](https://ttttonyhe.github.io/tailspace/llms-full.txt): Complete README, ADVANCED reference, and example tailnet policy in one plain-text markdown file.
 - [README.md](https://raw.githubusercontent.com/ttttonyhe/tailspace/main/README.md): Short introduction and everyday CLI commands.
 - [ADVANCED.md](https://raw.githubusercontent.com/ttttonyhe/tailspace/main/ADVANCED.md): Auth keys, SSH, supervision rules, proxy failover, updates, settings, troubleshooting, and security model.
 - [Example tailnet policy](https://raw.githubusercontent.com/ttttonyhe/tailspace/main/examples/policy.hujson): Ready-to-paste HuJSON policy with tag:server, nonroot Tailscale SSH, and cache-network-maps.
 
-## Environment guides
+## Environment and workflow guides
 
-- [HPC and Slurm clusters](https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/): SSH, VS Code Remote-SSH, Jupyter, shared NFS home directories, noexec scratch install, and CentOS 7 compatibility.
+- [HPC and Slurm clusters](https://ttttonyhe.github.io/tailspace/guides/hpc-slurm/): Shared NFS home directories, noexec scratch installs, auth keys, and CentOS 7 compatibility.
 - [Kubernetes pods and unprivileged Docker containers](https://ttttonyhe.github.io/tailspace/guides/kubernetes-docker/): Running Tailscale without CAP_NET_ADMIN, /dev/net/tun, systemd, or cron, with container UDP GSO disabled.
+- [VS Code Remote-SSH, Cursor, Jupyter, and tailscale nc](https://ttttonyhe.github.io/tailspace/guides/vscode-jupyter-ssh/): Port 22 Tailscale SSH, port 2222 OpenSSH, direct Jupyter and TensorBoard ports, and outbound scp/rsync/git via ProxyCommand.
 - [HTTP proxy failover and DERP relays](https://ttttonyhe.github.io/tailspace/guides/proxy-failover/): Direct and HTTP proxy switching, mainland China networks, custom DERP servers, and peer relays.
 - [Tailspace vs manual tailscaled and systemd --user](https://ttttonyhe.github.io/tailspace/guides/vs-manual-userspace/): Comparison of supervision, reboot recovery, multi-user safety, and Go thread tuning.
+- [Troubleshooting and error reference](https://ttttonyhe.github.io/tailspace/guides/troubleshooting/): Fixes for /dev/net/tun, systemd --user, controlplane.tailscale.com, 180-day key expiry, noexec, flock, and DERP relay latency.
 
-## Chinese guides (简体中文指南)
+## Chinese docs and guides (简体中文)
 
+- [命令与选项参考](https://ttttonyhe.github.io/tailspace/zh/reference/): 全部子命令、选项、环境变量、目录结构与 Tailscale 调优参数。
 - [超算与 Slurm 集群指南](https://ttttonyhe.github.io/tailspace/zh/guides/hpc-slurm/): HPC、Slurm 与共享 NFS 家目录免 root 安装 Tailscale。
 - [Kubernetes 与无特权容器指南](https://ttttonyhe.github.io/tailspace/zh/guides/kubernetes-docker/): 无需 CAP_NET_ADMIN、/dev/net/tun 与 systemd 运行 Tailscale。
+- [VS Code Remote-SSH、Cursor 与 Jupyter 指南](https://ttttonyhe.github.io/tailspace/zh/guides/vscode-jupyter-ssh/): 22 与 2222 端口 SSH、Jupyter 与 TensorBoard 直连及 tailscale nc 转发。
 - [HTTP 代理切换与 DERP 中继指南](https://ttttonyhe.github.io/tailspace/zh/guides/proxy-failover/): 直连与 HTTP 代理故障切换、中国大陆网络与自建 DERP。
 - [与手动 tailscaled 及 systemd --user 对比](https://ttttonyhe.github.io/tailspace/zh/guides/vs-manual-userspace/): 崩溃监控、服务器重启恢复、共享主机隔离与多核调优对比。
+- [故障排查与常见报错](https://ttttonyhe.github.io/tailspace/zh/guides/troubleshooting/): /dev/net/tun、systemd、代理、180 天密钥过期、noexec 与 DERP 中继排查。
